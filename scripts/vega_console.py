@@ -147,6 +147,10 @@ class Console:
             self.g_dev_arm = g.add_text("Dexmate", "检测中 …")
             self.g_dev_hand = g.add_text("Sharpa", "检测中 …")
             self.g_dev_cam = g.add_text("相机", "检测中 …")
+            # 相机独立开关(2026-08-11 用户要求):看画面不必启动整套仿真栈。
+            # 打开后点云出现在 3D 场景机器人旁,「相机画面」行显示帧数。
+            self.b_cam_on = g.add_button("打开相机画面")
+            self.b_cam_off = g.add_button("关闭相机画面")
 
         with g.add_folder("启动"):
             # 场地相关的尺寸放在界面上,不写死在脚本里 —— 换一张桌子就得改。
@@ -206,6 +210,8 @@ class Console:
         self._apply_rules()
         self.b_start.on_click(lambda _: self.start_stack())
         self.b_stop.on_click(lambda _: self.stop_stack())
+        self.b_cam_on.on_click(lambda _: self.open_camera())
+        self.b_cam_off.on_click(lambda _: self._stop("camera"))
         self.b_dex.on_click(lambda _: self.connect_dexmate())
         self.b_dex_off.on_click(lambda _: self._stop("bridge"))
         self.b_sharpa.on_click(lambda _: self.connect_sharpa())
@@ -551,10 +557,7 @@ class Console:
         # 相机:检测到就起点云录制。它自己订开关频道,录制时才写盘;没检测到
         # 就不起 —— 相机不是必需的(还没标外参),不能因为它缺席就挡住别的。
         if not fake and (self.dev.get("cam") or 0) > 0:
-            self._start("camera",
-                        f"{PY['venv']} -u scripts/kinect_pointcloud.py "
-                        f"--record-session tcp://127.0.0.1:5584 "
-                        f"--pub-view 'tcp://*:5591'")
+            self.open_camera()
 
     def stop_stack(self):
         # 仿真进程必须走正常退出(广播 shutdown,它自己收尾)。用信号杀
@@ -574,6 +577,24 @@ class Console:
         # 它像系统服务一样常驻即可;控制台启动时 pgrep 查到就不会重复起。
         for n in ("consumer", "producer", "glove_r", "glove_l", "camera"):
             self._stop(n)
+
+    def open_camera(self):
+        """独立打开相机画面(不启动仿真栈)。与 start_stack 用同一个进程名,
+        栈随后启动时不会重复开;「全部停止」会把它一并停掉。"""
+        p = self.procs.get("camera")
+        if p and p.alive():
+            self.mirror.g_cam.value = "已经开着(见帧数)"
+            return
+        if self.dev and (self.dev.get("cam") or 0) <= 0:
+            why = "pyk4a 不可用" if self.dev.get("cam", 0) < 0 else "未检测到相机"
+            self.mirror.g_cam.value = f"{why},没有启动"
+            print(f"[console] {why},不启动相机")
+            return
+        self._start("camera",
+                    f"{PY['venv']} -u scripts/kinect_pointcloud.py "
+                    f"--record-session tcp://127.0.0.1:5584 "
+                    f"--pub-view 'tcp://*:5591'")
+        self.mirror.g_cam.value = "启动中 …(首帧要几秒)"
 
     # -- real hardware --------------------------------------------------------
     def connect_dexmate(self):
