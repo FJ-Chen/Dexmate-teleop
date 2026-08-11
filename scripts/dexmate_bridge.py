@@ -251,9 +251,14 @@ def main() -> int:
     ap.add_argument("--sync-regap", type=float, default=15.0,
                     help="单位为度。同步走到快照姿势后,若操作者已经移动超过此值,"
                          "再慢速走一趟;否则转入跟随")
-    ap.add_argument("--follow-speed", type=float, default=150.0,
+    ap.add_argument("--follow-speed", type=float, default=60.0,
                     help="跟随阶段每个关节的最大角速度,单位为度每秒。硬件自身上限为"
-                         "137 度每秒(j1/j2)与 155 度每秒(j3 至 j7),高于该值不会更快")
+                         "137 度每秒(j1/j2)与 155 度每秒(j3 至 j7)。默认 60 ≈ 硬件的"
+                         " 0.4 倍,与参考实现(V2AP/T-Rex 的 DEXMATE_VEL_LIMIT_SCALE"
+                         "=0.4)一致 —— 2026-08-10 实测:旧默认 150 等于按硬件极限"
+                         "速度追赶,输入流每次中断恢复后机器人猛甩 30° 左右补上落差"
+                         "(72 分钟里 568 次落后告警、30 次停用),操作者报「危险」。"
+                         "落后的读数仍会打出来;确实想更快时显式给这个参数")
     ap.add_argument("--min-hand-gap", type=float, default=0.08,
                     help="单位为米。两手的指令位置近于此值时不再下发。求解器没有"
                          "碰撞模型,仿真的自碰撞检测也处于关闭状态,上游没有任何环节拦截")
