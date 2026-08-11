@@ -9,9 +9,10 @@ right wrist, waist). CPU only, no Isaac.
 """
 import argparse
 import sys
+import pathlib
 import time
 
-sys.path.insert(0, "/home/luhr/dexmate/MagicDexMate")
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
 import numpy as np  # noqa: E402
 

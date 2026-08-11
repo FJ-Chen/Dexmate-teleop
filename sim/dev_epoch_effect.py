@@ -13,7 +13,7 @@ import sys
 import threading
 import time
 
-ROOT = pathlib.Path.home() / "dexmate/MagicDexMate"
+ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from magicdexmate.control_link import ControlPublisher  # noqa: E402
 

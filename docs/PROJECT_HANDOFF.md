@@ -1,7 +1,7 @@
 # MagicDexMate — handover notes
 
 > Handover for the Vega-1 whole-body teleoperation work.
-> Written 2026-08-09. The codebase is **`~/dexmate/MagicDexMate`**.
+> Written 2026-08-09. The codebase is **`<仓库根目录>`**.
 
 Whole-body teleoperation of a **Dexmate Vega-1** humanoid: a PICO headset and
 wrist trackers drive the two 7-DoF arms, the 3-DoF head and the 3-joint sagittal
@@ -11,13 +11,13 @@ Everything is validated in Isaac Lab first, then streamed to the real robot over
 
 **This file lives in `~/magicsim/GR00T-WholeBodyControl/` (the fork that holds
 the engineering log), but the code it describes lives in
-`~/dexmate/MagicDexMate/`.** All paths below are absolute for that reason.
+`<仓库根目录>/`.** All paths below are absolute for that reason.
 
 This file is the map. Two other documents go deeper and are kept current:
 
 | Document | What it holds |
 |---|---|
-| `~/dexmate/MagicDexMate/SOP_wholebody_teleop.md` | **Operator manual.** How to start, what "good" looks like, what to do when it isn't. Deliberately no theory. |
+| `<仓库根目录>/SOP_wholebody_teleop.md` | **Operator manual.** How to start, what "good" looks like, what to do when it isn't. Deliberately no theory. |
 | `~/magicsim/GR00T-WholeBodyControl/workflow_fj.md` (next to this file) | **Engineering log.** Every decision, every measurement, every hypothesis that turned out wrong. Reverse-chronological. Long, but it is the reason we don't re-run failed experiments. |
 | `~/dexmate/fj_work_claude.md` | The hand/glove line's own log (separate pipeline, 1250 lines). |
 
@@ -25,12 +25,12 @@ This file is the map. Two other documents go deeper and are kept current:
 
 ## 1. Where the code is
 
-**The codebase is `~/dexmate/MagicDexMate`.** Nearly all work happens here.
+**The codebase is `<仓库根目录>`.** Nearly all work happens here.
 The other paths are dependencies, not workspaces.
 
 | Path | Role |
 |---|---|
-| **`~/dexmate/MagicDexMate`** | **This repo. The codebase.** Mapping, IK, sim, teleop, recording, all tooling. |
+| **`<仓库根目录>`** | **This repo. The codebase.** Mapping, IK, sim, teleop, recording, all tooling. |
 | `~/magicsim/GR00T-WholeBodyControl` | Fork of NVlabs GR00T-WholeBodyControl. Holds `workflow_fj.md`; also the vendored PICO SDK (`external_dependencies/`). |
 | `~/Dexmate/dexcontrol` | Vendor SDK for the real robot (zenoh/dexcomm). **Has its own venv; never install it into ours.** |
 | `~/Dexmate/dexmate-urdf` | Official Vega-1 URDF — the authority for joint limits. |
@@ -89,7 +89,7 @@ Two rules hold this together and should not be broken:
 ## 3. Entry points
 
 ```bash
-cd ~/dexmate/MagicDexMate
+cd <仓库根目录>
 
 # The operator entry point. Zero arguments; everything else is in the browser.
 .venv/bin/python scripts/vega_console.py            # browser :8086
@@ -112,7 +112,7 @@ change the numbers by 30×, and it disguises itself as noise.
 
 ## 4. Key files
 
-*Paths in this section are relative to `~/dexmate/MagicDexMate`.*
+*Paths in this section are relative to `<仓库根目录>`.*
 
 ### Mapping and control
 | File | What it is |

@@ -1,6 +1,6 @@
 """本轮新增模块的单测:默认姿势、环境障碍物、触觉差分录制。
 
-    cd ~/dexmate/MagicDexMate
+    cd <仓库根目录>
     env -u PYTHONPATH PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 \
         .venv/bin/python -m pytest tests/test_new_modules.py -q
 

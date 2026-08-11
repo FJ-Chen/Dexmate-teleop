@@ -1,6 +1,6 @@
 """--hands both 那条路(单进程双手)的接线验证。真手套要硬件,但接线不用。"""
 import pathlib, subprocess, sys, time, os, json
-M = pathlib.Path.home()/"dexmate/MagicDexMate"
+M = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(M)); sys.path.insert(0, str(M/"scripts"))
 import zmq, viser
 from viser_isaac_mirror import Mirror

@@ -46,8 +46,7 @@ from magicdexmate.palm_fix import (  # noqa: E402
 from magicdexmate.control_link import ControlPublisher  # noqa: E402
 from magicdexmate.retarget.mapping import sharpa_sdk_joint_names  # noqa: E402
 
-_SHARPA = pathlib.Path(
-    "~/dexmate/MagicDexMate/assets/vega_1_sharpa.urdf").expanduser()
+_SHARPA = pathlib.Path(__file__).resolve().parents[1] / "assets/vega_1_sharpa.urdf"
 BARE = pathlib.Path(
     "~/Dexmate/dexmate-urdf/robots/humanoid/vega_1/vega_1.urdf").expanduser()
 DEFAULT_URDF = _SHARPA if _SHARPA.exists() else BARE

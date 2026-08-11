@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """查「用了但没定义的名字」—— 这个仓库栽过的那一类 NameError。
 
-    cd ~/dexmate/MagicDexMate && .venv/bin/python sim/dev_undefined_names.py 文件...
+    cd <仓库根目录> && .venv/bin/python sim/dev_undefined_names.py 文件...
     .venv/bin/python sim/dev_undefined_names.py            # 不给参数就查全仓
 
 为什么要自己写:本机三个 venv 都没有 ruff/pyflakes,而这个仓库反复栽的正是

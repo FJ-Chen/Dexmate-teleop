@@ -56,10 +56,10 @@ consumer 三个 pane。**不需要序列号、不需要 trackers.env**(producer 
 
 ```
 [T1] PC Service        bash /opt/apps/roboticsservice/runService.sh
-[T2] producer(py3.10) cd ~/dexmate/MagicDexMate && mkdir -p logs && \
+[T2] producer(py3.10) cd <仓库根目录> && mkdir -p logs && \
                        .venv-pico/bin/python scripts/teleop_pico_producer.py \
                            --record logs/pico_$(date +%Y%m%d_%H%M%S).msgpack
-[T3] consumer          cd ~/dexmate/MagicDexMate && OMNI_KIT_ACCEPT_EULA=YES \
+[T3] consumer          cd <仓库根目录> && OMNI_KIT_ACCEPT_EULA=YES \
                        .venv-isaac/bin/python sim/teleop_vega_pico.py --source zmq
      (默认即 tracker 模式 + 固定名;legacy 手柄对比加 --mode controllers)
 ```

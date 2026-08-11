@@ -12,8 +12,8 @@ cmd(指令关节角)。本程序按录制时的节奏把它设成关节目标,�
 判据:指令与实际的偏差要小且稳定。某个关节持续差很多,说明该关节在物理下追
 不上,那么真机上大概率也追不上,而浏览器预览是看不出来的。
 
-用法(先 cd 到 ~/dexmate/MagicDexMate,脚本与运行环境都在那里)
-    cd ~/dexmate/MagicDexMate
+用法(先 cd 到 <仓库根目录>,脚本与运行环境都在那里)
+    cd <仓库根目录>
     .venv-isaac/bin/python sim/replay_in_isaac.py --file logs/take_0001.msgpack
     .venv-isaac/bin/python sim/replay_in_isaac.py --file logs/take_0001.msgpack \\
         --headless --joint-csv /tmp/isaac_replay.csv

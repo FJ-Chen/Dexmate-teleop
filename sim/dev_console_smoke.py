@@ -14,7 +14,7 @@ import sys
 import time
 import pathlib
 
-ROOT = pathlib.Path.home() / "dexmate/MagicDexMate"
+ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 sys.argv = ["vega_console"]
 import vega_console as V  # noqa: E402

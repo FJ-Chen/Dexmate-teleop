@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """量「操作者动了之后,指令过多久才跟上」—— 滤波器到底滞后多少毫秒。
 
-    cd ~/dexmate/MagicDexMate && .venv/bin/python sim/dev_lag.py trace.csv [trace2.csv ...]
+    cd <仓库根目录> && .venv/bin/python sim/dev_lag.py trace.csv [trace2.csv ...]
 
 第 4 条(真机跟不上人)拆成两半:**慢**是速度上限,物理的;**迟**是滞后,
 软件能拿回来。此前只知道两级 one-euro(末端 1.0 Hz、关节 6.0 Hz)「大概 90 到

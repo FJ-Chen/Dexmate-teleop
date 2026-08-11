@@ -41,8 +41,7 @@ from magicdexmate.head_waist_map import TORSO_HOME  # noqa: E402
 from magicdexmate.actions import (  # noqa: E402
     FREEFORM, HEAD_WAIST_LABELS, SESSION_PM_LABELS, STATIC_LABELS, slug_of)
 
-_SHARPA = pathlib.Path(
-    "~/dexmate/MagicDexMate/assets/vega_1_sharpa.urdf").expanduser()
+_SHARPA = pathlib.Path(__file__).resolve().parents[1] / "assets/vega_1_sharpa.urdf"
 # prefer the hand-fitted model when it has been built - what the real robot
 # wears - and fall back to the bare arm so this still runs without it
 DEFAULT_URDF = _SHARPA if _SHARPA.exists() else pathlib.Path(

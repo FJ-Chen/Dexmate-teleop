@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """一条命令跑完所有**不需要硬件**的检查。
 
-    cd ~/dexmate/MagicDexMate && .venv/bin/python scripts/check_all.py
+    cd <仓库根目录> && .venv/bin/python scripts/check_all.py
     .venv/bin/python scripts/check_all.py --quick     # 只跑秒级的那几项
 
 改完遥操作的任何一环之后跑这个。它把散落的台架脚本收成一个入口 —— 此前它们

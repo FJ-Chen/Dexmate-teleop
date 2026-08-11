@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """`--relax-at-limit` 的自锁回归:肩关节顶限位**不得**触发朝向放松。
 
-    cd ~/dexmate/MagicDexMate && .venv/bin/python sim/dev_relax_latch.py
+    cd <仓库根目录> && .venv/bin/python sim/dev_relax_latch.py
 
 2026-08-10 查清的失效(此前记作「对机器负载极度敏感,根因未知」):
 

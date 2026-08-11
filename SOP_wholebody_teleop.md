@@ -52,7 +52,7 @@ ping -c2 192.168.1.100      # 左手套
 只需要一个终端:
 
 ```bash
-cd ~/dexmate/MagicDexMate && .venv/bin/python scripts/vega_console.py
+cd <仓库根目录> && .venv/bin/python scripts/vega_console.py
 ```
 
 浏览器打开 http://localhost:8086,之后的操作都在页面上:

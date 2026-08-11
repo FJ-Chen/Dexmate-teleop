@@ -20,7 +20,7 @@
 开关用的是浏览器页面里已有的「驱动真机」,不额外做界面。页面关闭或开关关闭
 即视为撤销,程序立刻退回预览并把离合标记置空。
 
-用法(先 cd 到 ~/dexmate/MagicDexMate)
+用法(先 cd 到 <仓库根目录>)
     # 1. 录制。一边正常遥操作,一边录下要发给机器人的指令
     .venv/bin/python scripts/replay_check.py --record logs/take_0001.msgpack
 

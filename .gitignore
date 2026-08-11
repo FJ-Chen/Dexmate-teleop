@@ -31,3 +31,9 @@ scripts/trackers.env
 # 回归基线要留:每个 1.5 KB,是以后所有对比的参照物,丢了就没有基准了。
 # 同目录下的 CSV(每份 2.7 MB)不留。
 !/logs/regress/*.json
+
+# 同名符号链接(打包版把 venv 软链到别处验证时)也要忽略:目录型规则
+# `.venv/` 匹配不到符号链接
+.venv
+.venv-isaac
+.venv-pico

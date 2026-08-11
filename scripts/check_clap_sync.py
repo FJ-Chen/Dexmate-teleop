@@ -2,7 +2,7 @@
 """拍手测试:量出手和手臂两路数据之间还剩多少时间偏移。
 
     # 录一段「双手快速合拢拍一下」(页面上开始新一段 -> 开始录制 -> 拍手 -> 停止)
-    cd ~/dexmate/MagicDexMate
+    cd <仓库根目录>
     .venv/bin/python scripts/check_clap_sync.py data/sessions/<名称>
 
 **为什么必须做这一步**:各路数据现在都打主机墙上时钟,所以**戳**是对齐的;但

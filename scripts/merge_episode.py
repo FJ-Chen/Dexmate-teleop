@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """把一次录制的各路数据按主机墙上时钟合并成一份。
 
-    cd ~/dexmate/MagicDexMate
+    cd <仓库根目录>
     .venv/bin/python scripts/merge_episode.py data/sessions/<名称>
     .venv/bin/python scripts/merge_episode.py data/sessions/<名称> --out merged.h5
 

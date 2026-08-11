@@ -25,8 +25,14 @@ from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sensors import CameraCfg
 from isaaclab.utils import configclass
 
+# 同 vega_scene.py 的查找顺序;顺带修掉原默认值里的 ~/luhr/ 双重家目录笔误
+_REPO_ASSETS = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "assets", "isaac")
 MAGICSIM_ASSETS = os.environ.get(
-    "MAGICSIM_ASSETS", os.path.expanduser("~/luhr/magicsim/MagicSim/Assets")
+    "MAGICSIM_ASSETS",
+    _REPO_ASSETS if os.path.isdir(_REPO_ASSETS)
+    else os.path.expanduser("~/magicsim/MagicSim/Assets")
 )
 VEGA_SHARPA_USD = f"{MAGICSIM_ASSETS}/Robots/vega_1p_sharpa.usd"
 

@@ -27,7 +27,7 @@
 ### 先跑这个确认现状
 
 ```bash
-cd ~/dexmate/MagicDexMate
+cd <仓库根目录>
 .venv/bin/python scripts/check_all.py          # 应当 13/13;--quick 只跑 6 秒那 5 项
 .venv/bin/python scripts/vega_console.py       # 操作入口,浏览器 :8086
 .venv/bin/python scripts/viser_verify.py       # 两台机器人并排看第 5 条,浏览器 :8090
@@ -151,7 +151,7 @@ clip_headwaist:45.94% → **11.44%**,最长 4.6 → **0.8 秒**。**两份素材
 - **真机过流/力矩告警**:桥接已录电流(`read_state` 三列)但不告警 —— 阈值需要真机数据才能定,首驱时看读数再加;
 - **Pink 无碰撞模型**(求解器内部)—— 与 V2AP/T-Rex 一致(他们注释明写「加了会拖慢」),靠出口层自碰撞 hold 兜底,不算欠账。
 
-### 📁 本轮改动清单(均在 `~/dexmate/MagicDexMate`)
+### 📁 本轮改动清单(均在 `<仓库根目录>`)
 
 | 文件 | 状态 | 改了什么 |
 |---|---|---|
@@ -281,7 +281,7 @@ clip_headwaist:45.94% → **11.44%**,最长 4.6 → **0.8 秒**。**两份素材
 ### 现在的入口是控制台(2026-08-06 新)
 
 ```bash
-cd ~/dexmate/MagicDexMate && .venv/bin/python scripts/vega_console.py   # 浏览器 :8086
+cd <仓库根目录> && .venv/bin/python scripts/vega_console.py   # 浏览器 :8086
 ```
 
 零参数;勾部位(手/左臂/右臂/头/腰)、启动、连真机(两个按钮)、录制、全部停止,全在页面上。「模拟数据」勾上可无硬件验全链路。操作手册 = `MagicDexMate/SOP_wholebody_teleop.md`。老的 `run_teleop.sh` 仍可用,勿与控制台同开。
@@ -329,7 +329,7 @@ cd ~/dexmate/MagicDexMate && .venv/bin/python scripts/vega_console.py   # 浏览
 **起跑命令(实时配置已封装成 `--fast`)**:
 
 ```bash
-cd ~/dexmate/MagicDexMate && scripts/run_teleop.sh --headless --fast -- \
+cd <仓库根目录> && scripts/run_teleop.sh --headless --fast -- \
   --map waist-abs --ori-mode palm --control-mode arms+head+waist
 ```
 
@@ -581,7 +581,7 @@ OMNI_KIT_ACCEPT_EULA=YES .venv-isaac/bin/python sim/teleop_vega_pico.py \
 
 > **读完这一节就能上手。** 细节在下面按日期倒序的条目里,但那些主要是「为什么」和「试错史」,不必先读完。
 
-> **📕 操作手册 = `~/dexmate/MagicDexMate/SOP_wholebody_teleop.md`(2026-08-04 新增)。**
+> **📕 操作手册 = `<仓库根目录>/SOP_wholebody_teleop.md`(2026-08-04 新增)。**
 > 那份**只写给操作者**:开始前检查什么、一条命令怎么起、怎么看好没好、坏了怎么办、怎么停。**刻意不写原理**——用户要求 SOP 用最简单的话说清操作,原理一律留在本文件。所以改设计、查根因、写新功能,都以**本文件**为准;要动手跑,看那份。
 
 ### 一句话
@@ -602,14 +602,14 @@ OMNI_KIT_ACCEPT_EULA=YES .venv-isaac/bin/python sim/teleop_vega_pico.py \
 | 录制 | `--joint-csv` / `--trace-csv` | HDF5(关节 + 三层触觉) |
 | 状态 | 手臂/头/腰已获用户实机认可 | 四个阶段全部完成,右手真机验证过 |
 
-**两条都在 `~/dexmate/MagicDexMate` 这一个仓库里,架构相同(producer → ZMQ → 消费端)。**
+**两条都在 `<仓库根目录>` 这一个仓库里,架构相同(producer → ZMQ → 消费端)。**
 **当前任务的重点是把它们合流** —— 同时跑、同时在 Viser 显示、录进同一份带对齐时间戳的数据。
 
 ### 代码在哪(注意:**不在**这个仓库)
 
 | 东西 | 路径 |
 |---|---|
-| **主代码库** | `~/dexmate/MagicDexMate/` ← 几乎所有工作在这里 |
+| **主代码库** | `<仓库根目录>/` ← 几乎所有工作在这里 |
 | 本文件(工作动态) | `~/magicsim/GR00T-WholeBodyControl/workflow_fj.md` |
 | Vega URDF(官方) | `~/Dexmate/dexmate-urdf/robots/humanoid/vega_1/vega_1.urdf` |
 | Isaac 用的 USD | `~/magicsim/MagicSim/Assets/Robots/vega_1p_weldwheels.usd` |
@@ -620,9 +620,9 @@ OMNI_KIT_ACCEPT_EULA=YES .venv-isaac/bin/python sim/teleop_vega_pico.py \
 
 | 用途 | 解释器 |
 |---|---|
-| Isaac 仿真 / consumer | `~/dexmate/MagicDexMate/.venv-isaac/bin/python` |
-| 离线分析 / 评测台 / Viser | `~/dexmate/MagicDexMate/.venv/bin/python` |
-| PICO producer | `~/dexmate/MagicDexMate/.venv-pico/bin/python` |
+| Isaac 仿真 / consumer | `<仓库根目录>/.venv-isaac/bin/python` |
+| 离线分析 / 评测台 / Viser | `<仓库根目录>/.venv/bin/python` |
+| PICO producer | `<仓库根目录>/.venv-pico/bin/python` |
 | **真机(dexcontrol)** | `~/Dexmate/dexcontrol/.venv/bin/python` |
 
 **`dexcontrol` 绝不能装进 `.venv-isaac`** —— 它拉 zenoh/dexcomm/dexbot_utils,而那个环境 numpy 锁 1.26、onnxruntime 锁 CUDA 12,很脆。真机走独立进程 + zmq。
@@ -645,7 +645,7 @@ sim/teleop_vega_pico.py  (.venv-isaac)   ← 映射律 + Pink IK,都在 CPU
 ### 一条命令跑起来
 
 ```bash
-cd ~/dexmate/MagicDexMate && VEGA_TORSO_HOME=legacy \
+cd <仓库根目录> && VEGA_TORSO_HOME=legacy \
   scripts/run_teleop.sh --headless --fast -- \
     --map chest-anchor --ori-mode palm --control-mode arms+head+waist \
     --waist-mode j3 --pos-scale 1.0
@@ -1077,7 +1077,7 @@ cd ~/dexmate/MagicDexMate && VEGA_TORSO_HOME=legacy \
   - **腕部相机**:我们一台都没有,唯一的 Kinect 还没标外参。
   - **每回合 OMPL 规划**:我们用现成的慢速同步代替,不需要引入 OMPL。
 
-  ### 📁 本轮改动清单(2026-08-08,全部已落盘,均在 `~/dexmate/MagicDexMate`)
+  ### 📁 本轮改动清单(2026-08-08,全部已落盘,均在 `<仓库根目录>`)
 
   | 文件 | 状态 | 改了什么 |
   |---|---|---|
@@ -1209,7 +1209,7 @@ cd ~/dexmate/MagicDexMate && VEGA_TORSO_HOME=legacy \
   ### ✅ 控制台落地:`scripts/vega_console.py`[新],零参数单脚本(用户第 2 条)
 
   ```bash
-  cd ~/dexmate/MagicDexMate && .venv/bin/python scripts/vega_console.py   # 浏览器 :8086
+  cd <仓库根目录> && .venv/bin/python scripts/vega_console.py   # 浏览器 :8086
   ```
   - **结构**:镜像重构成 `viser_isaac_mirror.Mirror` 类(**同一份显示实现**,老命令行为不变、两个冒烟原样通过);控制台 = 进程托管 + 把 Mirror 嵌进同一页面。子进程仍是原来那些程序。
   - **页面上有**:五个勾选(控制手 / 左臂 / 右臂 / 控制头 / 控制腰,勾腰自动勾手+头+双臂)、模拟数据开关(无硬件验证全链路)、启动/停止、**连接手臂 / 连接真手两个按钮 + 各自状态行**(状态取自子进程日志尾行)、录制按钮(手臂指令落 `logs/episodes/episode_NNNN_arm.msgpack`,episode 号广播给手侧)、全部停止、勾选跨次记忆(`logs/console_state.json`)。子进程日志在 `logs/console/`。
@@ -1284,7 +1284,7 @@ cd ~/dexmate/MagicDexMate && VEGA_TORSO_HOME=legacy \
   - **用户要求**:"我接下来要同时戴手套和 pico,你要做好接口,怎么启动"。
   - **起跑命令(KNOWN-GOOD 配置 + 手套)**:
     ```bash
-    cd ~/dexmate/MagicDexMate && VEGA_TORSO_HOME=legacy \
+    cd <仓库根目录> && VEGA_TORSO_HOME=legacy \
       scripts/run_teleop.sh --headless --fast --hands right -- \
         --map chest-anchor --ori-mode palm --control-mode arms+head+waist \
         --waist-mode j3 --pos-scale 1.0
@@ -1392,7 +1392,7 @@ cd ~/dexmate/MagicDexMate && VEGA_TORSO_HOME=legacy \
     # 然后插相机(必须接电源适配器 + USB3);规则是新装的就拔插一次
 
     # 3) python 绑定(现编译,要用到步骤 1 的头文件)
-    cd ~/dexmate/MagicDexMate && uv pip install --python .venv/bin/python pyk4a
+    cd <仓库根目录> && uv pip install --python .venv/bin/python pyk4a
 
     # 4) 体检 -> 必须看到 devices seen 1
     .venv/bin/python scripts/kinect_pointcloud.py --probe
@@ -1530,7 +1530,7 @@ cd ~/dexmate/MagicDexMate && VEGA_TORSO_HOME=legacy \
   ### ✅ 已知良好配置(KNOWN-GOOD,别凭感觉改)
 
   ```bash
-  cd ~/dexmate/MagicDexMate && VEGA_TORSO_HOME=legacy \
+  cd <仓库根目录> && VEGA_TORSO_HOME=legacy \
     scripts/run_teleop.sh --headless --fast -- \
       --map chest-anchor --ori-mode palm --control-mode arms+head+waist \
       --waist-mode j3 --pos-scale 1.0
@@ -2354,8 +2354,8 @@ cd ~/dexmate/MagicDexMate && VEGA_TORSO_HOME=legacy \
 | 需求 | 下落 | 状态 |
 |---|---|---|
 | Vega-1 URDF | `~/Dexmate/dexmate-urdf/robots/humanoid/vega_1/vega_1.urdf`(另有 `vega_1_gripper.urdf`、`vega_1_f5d6.urdf` 带手变体;`robots/hands/` 下有 dexs/dexd 夹爪、f5d6 手) | ✅ |
-| Vega 上半身 IK(仿真已验证) | `~/dexmate/MagicDexMate/sim/teleop_vega_sharpa.py` — 右臂 7DOF **DifferentialIKController** 腕姿态跟踪,hold-test 2mm 精度;jacobian 行索引坑已解决(`--jacobi-row body`,因 ArticulationRootAPI 在 /root_joint 上);`sim/debug_ik_vega.py` 为 IK 隔离诊断 | ✅ |
-| Isaac Lab Vega 场景 | `~/dexmate/MagicDexMate/sim/vega_sharpa_scene.py`(67 关节整机 ArticulationCfg,含 dummy holonomic base 3 关节,增益实测过;EE link = `R_ee`/`L_ee`) | ⚠️ 依赖缺失 USD |
+| Vega 上半身 IK(仿真已验证) | `<仓库根目录>/sim/teleop_vega_sharpa.py` — 右臂 7DOF **DifferentialIKController** 腕姿态跟踪,hold-test 2mm 精度;jacobian 行索引坑已解决(`--jacobi-row body`,因 ArticulationRootAPI 在 /root_joint 上);`sim/debug_ik_vega.py` 为 IK 隔离诊断 | ✅ |
+| Isaac Lab Vega 场景 | `<仓库根目录>/sim/vega_sharpa_scene.py`(67 关节整机 ArticulationCfg,含 dummy holonomic base 3 关节,增益实测过;EE link = `R_ee`/`L_ee`) | ⚠️ 依赖缺失 USD |
 | 整机 USD | `MagicSim/Assets/Robots/vega_1p_sharpa.usd`(Vega+双 SharpaWave,67 关节)——**当前 MagicSim checkout 不存在、无 git 历史**;02_sim_scene_plan.md 记载 2026-06-12 存在且冒烟通过 | ❌ 待用户确认下落 |
 | 无手整机 USD | `MagicSim/Assets/Robots/vega_1p.usd`(26 关节,无手指、无 R_ee/L_ee 命名 link) | ✅(退路) |
 | SharpaWave 手 USD | `~/dexmate/sharpa-urdf-usd-xml/wave_01/`(right/dual,with_wrist/with_flange/MIT 变体 .usda) | ✅ |
@@ -2363,7 +2363,7 @@ cd ~/dexmate/MagicDexMate && VEGA_TORSO_HOME=legacy \
 | producer/consumer 架构 | MagicDexMate 已是该架构:producer(`.venv`,`scripts/teleop_retarget.py`)→ ZMQ → consumer(`.venv-isaac`,`sim/test_env_sharpa.py --motion zmq`);`magicdexmate/sources/`(base/mock/wuji)可直接加 `pico_source.py`,`sinks/qpos_publisher.py` 现成 | ✅ |
 | 手指 retarget(超出本期范围) | MagicDexMate 已完成 wuji 手套→SharpaWave(sim+真机,分支 `fj-retarget-rework`);历史工作日志 `~/dexmate/fj_work_claude.md` | ✅ |
 | 真机 SDK(后续) | `~/Dexmate/dexcontrol`(手臂 ~100Hz 流控)、`/opt/sharpa-wave-sdk` | ✅ |
-| 项目路线图 | `~/dexmate/MagicDexMate/plans/00_roadmap.md`:**P4 = "Vega 手臂 + Pico"** 正是本任务;roadmap 顾虑"omniteleop 仅支持 Quest"——sim 阶段用本仓库 xrobotoolkit_sdk 直读 PICO,不需要 omniteleop,该顾虑解除 | ✅ |
+| 项目路线图 | `<仓库根目录>/plans/00_roadmap.md`:**P4 = "Vega 手臂 + Pico"** 正是本任务;roadmap 顾虑"omniteleop 仅支持 Quest"——sim 阶段用本仓库 xrobotoolkit_sdk 直读 PICO,不需要 omniteleop,该顾虑解除 | ✅ |
 
 (另:`~/meshes/vega_1p_*.obj` 是某次 URDF/模型导出的散件,非必需。)
 
@@ -2571,7 +2571,7 @@ consumer(MagicDexMate .venv-isaac,Isaac Lab):
 
 ### 2026-07-19/20 —— PICO→Vega 上半身遥操作:代码全部落地,mock 冒烟通过
 
-**新建文件(全部在 `~/dexmate/MagicDexMate`,未提交)**:
+**新建文件(全部在 `<仓库根目录>`,未提交)**:
 - `magicdexmate/pico/__init__.py` + `xr_client.py`(copy 自 decoupled_wbc,带出处注释)+ `xr_pose.py`(偏航补偿数学,纯 numpy/scipy,消费端可用)
 - `scripts/teleop_pico_producer.py`(py3.10 producer:原始 pose+按键 → msgpack → ZMQ PUB **:5581**;帧数学全部留在消费端,producer 保持"哑"设计以便录制复用)
 - `scripts/setup_pico_env.sh`(建 `.venv-pico`;editable 构建失败自动回退拷贝预编译 cp310 .so —— 实测走了回退路径,导入 OK)
@@ -2644,7 +2644,7 @@ PICO 头显+手柄+Swift 追踪器
 
 **Vega 遥操作任务 —— 历史状态(2026-07-19):**
 1. ~~vega_1p_sharpa.usd 缺失~~ **已解除**:用户确认不用手 → 直接用无手 `vega_1p.usd`。
-2. **文件落位方案(已向用户推荐,2026-07-19)**:主体全放 `~/dexmate/MagicDexMate`,布局:
+2. **文件落位方案(已向用户推荐,2026-07-19)**:主体全放 `<仓库根目录>`,布局:
    - `magicdexmate/pico/xr_client.py` ← **copy** 自 `decoupled_wbc/control/teleop/device/pico/xr_client.py`(薄封装,拷贝以免拖 decoupled_wbc 依赖)
    - `magicdexmate/pico/xr_pose.py` ← 从 `pico_streamer.py` **抽取** `_process_xr_pose`/`R_HEADSET_TO_WORLD` 偏航补偿逻辑
    - `scripts/teleop_pico_producer.py`(新写,producer:xr_client → msgpack/ZMQ PUB)

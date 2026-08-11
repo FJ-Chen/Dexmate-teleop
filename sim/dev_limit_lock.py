@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """「关节转到限位,之后动作全不准」—— 把这个失效量出来。
 
-    cd ~/dexmate/MagicDexMate && .venv/bin/python sim/dev_limit_lock.py 关节CSV [关节CSV ...]
+    cd <仓库根目录> && .venv/bin/python sim/dev_limit_lock.py 关节CSV [关节CSV ...]
 
 用户报的现象是:做幅度稍大或者胳膊肘旋转的动作时,机器人自己把关节转到限位或
 别的很奇怪的姿态,**导致接下来的动作都不准了**。「接下来」这三个字是关键 ——

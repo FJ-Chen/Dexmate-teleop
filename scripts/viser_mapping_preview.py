@@ -96,8 +96,7 @@ from magicdexmate.pico.xr_pose import pitch_delta, pose7_to_world_rot  # noqa: E
 
 IK_URDF = pathlib.Path(
     "~/Dexmate/dexmate-urdf/robots/humanoid/vega_1/vega_1.urdf").expanduser()
-_SHARPA = pathlib.Path(
-    "~/dexmate/MagicDexMate/assets/vega_1_sharpa.urdf").expanduser()
+_SHARPA = pathlib.Path(__file__).resolve().parents[1] / "assets/vega_1_sharpa.urdf"
 # Render the hands, solve on the bare arm: PinkVegaIK locks non-arm joints from
 # a hardcoded list, so the hands' 44 unlisted joints would stay free and change
 # the solve. Arm joint names are identical in both, so the answer transfers.

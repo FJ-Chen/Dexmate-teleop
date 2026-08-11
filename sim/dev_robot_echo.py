@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """真机姿态只读回显的免硬件测试(dexmate_observer -> mirror 那条线)。
 
-    cd ~/dexmate/MagicDexMate && .venv/bin/python sim/dev_robot_echo.py
+    cd <仓库根目录> && .venv/bin/python sim/dev_robot_echo.py
 
 三条断言(每条都能失败):
   1. 仿真流缺席时,假 observer 发布的关节角要被镜像画出来,状态行要写明

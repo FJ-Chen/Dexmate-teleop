@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """两台机器人并排跑同一段素材,看「顶在限位」这件事有没有被修掉。
 
-    cd ~/dexmate/MagicDexMate
+    cd <仓库根目录>
     .venv/bin/python scripts/viser_verify.py 左边.csv 右边.csv
     # 不给参数就用 logs/regress/ 里存好的那两份(基线 vs 修好的)
 

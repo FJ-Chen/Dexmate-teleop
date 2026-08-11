@@ -39,8 +39,7 @@ HANDS = {
     "left": ("left_sharpa_wave/left_sharpa_wave_with_flange.urdf",
              "left_hand_flange", "L_ee"),
 }
-DEFAULT_OUT = pathlib.Path(
-    "~/dexmate/MagicDexMate/assets/vega_1_sharpa.urdf").expanduser()
+DEFAULT_OUT = pathlib.Path(__file__).resolve().parents[1] / "assets/vega_1_sharpa.urdf"
 
 
 def absolutise_meshes(root: ET.Element, urdf_dir: pathlib.Path) -> int:

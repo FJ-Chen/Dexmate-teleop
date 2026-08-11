@@ -164,7 +164,7 @@ export ROBOT_NAME=dm/vgd1262ab823-1p
 **已存位姿**：`right_arm_teleop` = 遥操+录制用右臂位姿（2026-07-27 存，deg ≈ [-48.4, -21.1, -11.3, -91.9, -51.7, -4.7, 17.0]）。
 
 ```bash
-cd /home/luhr/dexmate/MagicDexMate
+cd <仓库根目录>
 
 # 列出已存位姿（不连机器人）
 /home/luhr/Dexmate/dexcontrol/.venv/bin/python goto_arm_pose.py --list
@@ -217,7 +217,7 @@ done
 以**右手**为例；左手把两条命令里的 `right` 都换成 `left`。两个终端都先：
 
 ```bash
-cd /home/luhr/dexmate/MagicDexMate
+cd <仓库根目录>
 ```
 
 ### 终端 1 — producer（手套 → retarget → ZMQ 发布）
@@ -260,7 +260,7 @@ LD_LIBRARY_PATH=/opt/sharpa-wave-sdk/lib PYTHONPATH= .venv/bin/python scripts/sh
 ## 8. 回放检查（每录一段就看一次）
 
 ```bash
-cd /home/luhr/dexmate/MagicDexMate
+cd <仓库根目录>
 PYTHONPATH= .venv/bin/python scripts/replay_hand_viser.py data/teleop/episode_0000/episode_0000_right.h5
 # 浏览器打开 http://localhost:8080
 ```
@@ -316,7 +316,7 @@ PYTHONPATH= .venv/bin/python scripts/replay_hand_viser.py data/teleop/episode_00
 | 机器人本体 IP（有线） | `192.168.50.20`（Zenoh 端口 7447）；SoC `192.168.50.21` |
 | 笔记本有线口 | `enp49s0`，需有 `192.168.50.100/24` |
 | ssh 上机器人（排查用） | `ssh dexmate`（= `dexmate@192.168.50.20`） |
-| 遥操/录制仓库 | `/home/luhr/dexmate/MagicDexMate`（分支 `fj-retarget-rework`） |
+| 遥操/录制仓库 | `<仓库根目录>`（分支 `fj-retarget-rework`） |
 | 遥操 Python 环境 | 仓库内 `.venv`（命令前必须加 `PYTHONPATH=` 清空） |
 | Sharpa SDK | `/opt/sharpa-wave-sdk`（runner 需 `LD_LIBRARY_PATH=/opt/sharpa-wave-sdk/lib`） |
 | Sharpa 手网段（同网口，勿删） | `192.168.10.240/24`（左手 `.10`、右手 `.20`） |

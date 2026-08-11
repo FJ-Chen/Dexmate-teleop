@@ -42,7 +42,7 @@
 ## PC 侧验证
 
 ```bash
-cd ~/dexmate/MagicDexMate && scripts/run_teleop.sh --no-service   # 服务已跑时
+cd <仓库根目录> && scripts/run_teleop.sh --no-service   # 服务已跑时
 # producer 窗格判据:device_ts=fresh 且 trk>=3;硬判据 = 人动数值动
 # consumer 自动啮合(trackers 模式默认,无手柄,键盘 R 重零 / SPACE 暂停)
 ```

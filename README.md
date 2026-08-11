@@ -18,8 +18,6 @@ Dexmate Vega-1 人形机器人全身遥操作(real + sim),两条已跑通的管�
 
 > 📄 retarget 链路的专门说明见 **[magicdexmate/retarget/README.md](magicdexmate/retarget/README.md)**。
 
-> 📄 retarget 链路的专门说明见 **[magicdexmate/retarget/README.md](magicdexmate/retarget/README.md)**。
-
 ## 两种运行模式
 
 ```

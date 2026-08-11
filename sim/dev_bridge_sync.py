@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """桥接程序的同步阶段能不能收敛 —— 用一个会动的假 consumer 逼它。
 
-    cd ~/dexmate/MagicDexMate && .venv/bin/python sim/dev_bridge_sync.py
+    cd <仓库根目录> && .venv/bin/python sim/dev_bridge_sync.py
 
 要证的事情
     同步阶段以 --sync-speed(默认 8 度每秒)从机器人当前位置走向操作者当前
