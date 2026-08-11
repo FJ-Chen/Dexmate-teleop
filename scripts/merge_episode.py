@@ -91,10 +91,16 @@ def main() -> int:
             ("pico", "pico.msgpack", "t_us"),
             ("glove_left", "glove_left.msgpack", "t_wall_us"),
             ("glove_right", "glove_right.msgpack", "t_wall_us"),
-            # 点云:每帧一个 npz 文件放在 cloud/ 下,时间戳单独一条流。
-            # 合并只带索引和戳,不复制点(一段几百 MB)—— 要点云时按
-            # cloud/index 去 cloud/NNNNNN.npz 取,单位是**毫米**(见 unit 字段)。
+            # 点云:每帧一个 npz 文件,时间戳单独一条流。合并只带索引和戳,
+            # 不复制点(一段几百 MB)—— 要点云时按 index 去对应目录取,单位
+            # 是**毫米**(见 unit 字段)。
             ("cloud", "cloud_t.msgpack", "t_wall_us")]
+    # 多相机(2026-08-11 起):每台相机一条流,按序列号命名
+    # cloud_t_<序列号>.msgpack + cloud_<序列号>/NNNNNN.npz;单相机旧命名
+    # (上面那条 "cloud")保留兼容。
+    for tf in sorted(d.glob("cloud_t_*.msgpack")):
+        serial = tf.name[len("cloud_t_"):-len(".msgpack")]
+        spec.append((f"cloud_{serial}", tf.name, "t_wall_us"))
     print(f"[合并] {d}")
     for name, fn, tk in spec:
         p = d / fn

@@ -9,9 +9,12 @@ SESS="_dev_pico"
 # 所以测试必须先清掉上次留下的目录 —— 否则读到的是新旧两跑拼在
 # 一起的流,时间跨度会变成几小时,而断言看起来像产品坏了。
 shutil.rmtree(ROOT/'data/sessions'/'_dev_pico', ignore_errors=True)
-ctl = ControlPublisher("tcp://*:5584")
+ctl = ControlPublisher("tcp://*:16595")   # 隔离端口,绝不用生产的 5584
 p = subprocess.Popen([str(ROOT/".venv-pico/bin/python"), "-u", "scripts/teleop_pico_producer.py",
-                      "--fake", "--body-full", "--control", "tcp://127.0.0.1:5584",
+                      "--fake", "--body-full", "--control", "tcp://127.0.0.1:16595",
+                      # 数据口也必须隔离:默认绑 5581,控制台在跑时会撞死,
+                      # 而且发布数据的测试按事故规则一律不碰生产端口
+                      "--pub", "tcp://*:16598",
                       ],
                      cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 t0=time.time()

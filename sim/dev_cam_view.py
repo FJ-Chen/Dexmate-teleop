@@ -29,7 +29,8 @@ VIEW = "tcp://127.0.0.1:16591"
 def main() -> int:
     proc = subprocess.Popen(
         [str(ROOT / ".venv/bin/python"), "-u", "scripts/kinect_pointcloud.py",
-         "--source", "mock", "--record-session", "tcp://127.0.0.1:16584",
+         "--source", "mock", "--mock-cams", "2",
+         "--record-session", "tcp://127.0.0.1:16584",
          "--pub-view", "tcp://*:16591"],
         cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     server = viser.ViserServer(port=8197, verbose=False)
@@ -48,20 +49,29 @@ def main() -> int:
               f"  {'✅' if ok else '❌ 没收到'}")
         bad += 0 if ok else 1
 
-        pc = mirror._cam_pc
-        if pc is None:
-            print("[2] ❌ 场景里没有点云")
+        # 等到两台都出现(各 5Hz 交替发,给足时间)
+        t1 = time.time()
+        while time.time() - t1 < 10 and len(mirror._cam_pcs) < 2:
+            mirror.tick()
+            time.sleep(0.02)
+        if len(mirror._cam_pcs) < 2:
+            print(f"[2] ❌ 只出现 {len(mirror._cam_pcs)} 台相机的点云(应为 2)")
             bad += 1
         else:
-            pts = np.asarray(pc.points)
-            near = np.linalg.norm(pts.mean(axis=0) - mirror._CAM_OFFSET) < 3.0
-            not_mm = np.abs(pts).max() < 50.0
-            ok = len(pts) > 100 and near and not_mm
-            print(f"[2] 点云 {len(pts)} 点,质心距偏置位 "
-                  f"{np.linalg.norm(pts.mean(axis=0) - mirror._CAM_OFFSET):.2f}m,"
-                  f"坐标量级 {np.abs(pts).max():.1f}"
-                  f"  {'✅ 已换系' if ok else '❌ 坐标不对(毫米当米?没换系?)'}")
-            bad += 0 if ok else 1
+            ok_all = True
+            for serial, h in mirror._cam_pcs.items():
+                pts = np.asarray(h["pc"].points)
+                near = np.linalg.norm(pts.mean(axis=0) - h["off"]) < 3.0
+                not_mm = np.abs(pts).max() < 50.0
+                ok = len(pts) > 100 and near and not_mm
+                ok_all &= ok
+                print(f"[2] {serial}:{len(pts)} 点,质心距其偏置位 "
+                      f"{np.linalg.norm(pts.mean(axis=0) - h['off']):.2f}m"
+                      f"  {'✅' if ok else '❌ 坐标不对'}")
+            offs = [tuple(h["off"]) for h in mirror._cam_pcs.values()]
+            sep = len(set(offs)) == len(offs)
+            print(f"[2b] 两台的显示位置互不重叠  {'✅' if sep else '❌'}")
+            bad += 0 if (ok_all and sep) else 1
     finally:
         proc.terminate()
         proc.wait(timeout=10)

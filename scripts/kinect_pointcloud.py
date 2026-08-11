@@ -289,8 +289,13 @@ def write_npz(path: pathlib.Path, cloud: Cloud) -> None:
 # capture (pyk4a)
 # ---------------------------------------------------------------------------
 def capture_clouds(frames: int, align: str, depth_mode: str, color_res: str, fps: int,
-                   color_format: str = "COLOR_BGRA32"):
-    """Yield (index, Cloud) from a live camera.  Importable for the recorder."""
+                   color_format: str = "COLOR_BGRA32", device_id: int = 0,
+                   info: dict | None = None):
+    """Yield (index, Cloud) from a live camera.  Importable for the recorder.
+
+    device_id 选第几台(多相机);info 不为 None 时,start 之后写入
+    info["serial"] —— 录制器用序列号给每台相机的数据目录命名(序列号不随
+    插拔顺序变,device_id 会变)。"""
     import pyk4a
     from pyk4a import Config, PyK4A
 
@@ -305,10 +310,14 @@ def capture_clouds(frames: int, align: str, depth_mode: str, color_res: str, fps
             # work and then break silently the day anyone adds a format flag.
             color_format=getattr(pyk4a.ImageFormat, color_format),
             synchronized_images_only=True,  # never pair a depth frame with a stale colour one
-        )
+        ),
+        device_id=device_id,
     )
     k4a.start()
-    print(f"[k4a] started  serial={k4a.serial}  depth={depth_mode}  color=RES_{color_res}  fps={fps}")
+    if info is not None:
+        info["serial"] = str(k4a.serial)
+    print(f"[k4a] started  dev={device_id} serial={k4a.serial}  depth={depth_mode}  "
+          f"color=RES_{color_res}  fps={fps}")
     try:
         got = 0
         dropped = 0
@@ -559,6 +568,8 @@ def record_session(args) -> int:
     import msgpack
     from magicdexmate.control_link import ControlSubscriber
 
+    import threading
+
     ctl = ControlSubscriber(args.record_session)
     print(f"[k4a] 订阅开关频道 {args.record_session};录制体素 {args.rec_voxel} m、"
           f"{args.rec_hz:.0f} Hz")
@@ -566,86 +577,134 @@ def record_session(args) -> int:
     # 什么」和连接状态,而不必自己打开设备(Kinect 独占,页面开了录制进程就
     # 打不开 —— 2026-08-11 用户就是被这一点卡住才有的这条流)。
     view_pub = None
-    view_last = 0.0
+    view_lock = threading.Lock()          # zmq socket 不是线程安全的
     if args.pub_view:
         import zmq as _zmq
         view_pub = _zmq.Context.instance().socket(_zmq.PUB)
-        view_pub.setsockopt(_zmq.SNDHWM, 2)
+        view_pub.setsockopt(_zmq.SNDHWM, 4)
         view_pub.bind(args.pub_view)
-        print(f"[k4a] 画面流发布于 {args.pub_view}(约 5 Hz,体素 2cm)")
-    # frames=0 在这两个生成器里是「0 帧」不是「不限」,录制要一直跑,所以给
-    # 一个足够大的数(30 fps 下约 9 小时)。
-    N = 10 ** 6
-    gen = (mock_clouds(N, args.fps) if args.source == "mock"
-           else capture_clouds(N, args.align, args.depth_mode, args.color_res,
-                               args.fps))
-    d = None
-    n = 0
-    nbytes = 0
-    t_last = 0.0
-    tfh = None
+        print(f"[k4a] 画面流发布于 {args.pub_view}(每台约 5 Hz,体素 2cm)")
+
+    # 多相机(2026-08-11 用户要求:接几台就录几台)。每台一个采集线程,身份
+    # 用**序列号**(不随插拔顺序变;device_id 会变),数据各写各的目录:
+    #   data/sessions/<会话>/cloud_<序列号>/NNNNNN.npz + cloud_t_<序列号>.msgpack
+    # 录制开关是全体共享的一份状态,由主线程从页面广播里读。
+    if args.source == "mock":
+        cams = [("mock", i) for i in range(max(1, args.mock_cams))]
+    else:
+        import pyk4a
+        n_dev = pyk4a.connected_device_count()
+        if n_dev == 0:
+            print("[k4a] 没有检测到任何相机")
+            return 1
+        cams = [("k4a", i) for i in range(n_dev)]
+        print(f"[k4a] 检测到 {n_dev} 台相机,逐台启动")
+
+    state = {"on": False, "session": "", "stop": False}
+    N = 10 ** 6          # frames=0 在生成器里是「0 帧」不是「不限」
+
+    def worker(kind: str, dev_id: int):
+        info: dict = {}
+        serial = f"MOCK{dev_id}" if kind == "mock" else ""
+        gen = (mock_clouds(N, args.fps) if kind == "mock"
+               else capture_clouds(N, args.align, args.depth_mode,
+                                   args.color_res, args.fps,
+                                   device_id=dev_id, info=info))
+        d = None
+        n = 0
+        nbytes = 0
+        t_last = 0.0
+        view_last = 0.0
+        t0_rec = 0.0
+        tfh = None
+        try:
+            for _, cloud in gen:
+                if state["stop"]:
+                    break
+                if not serial:
+                    serial = info.get("serial", f"dev{dev_id}")
+                now = time.time()
+                if view_pub is not None and now - view_last >= 0.2:
+                    view_last = now
+                    vc = voxel_downsample(cloud, 0.02)
+                    try:
+                        with view_lock:
+                            view_pub.send(msgpack.packb(
+                                {"t_wall_us": int(now * 1e6),
+                                 "serial": serial, "n": int(len(vc.xyz)),
+                                 "xyz_mm": (vc.xyz * 1000.0)
+                                 .astype(np.int16).tobytes(),
+                                 "rgb": vc.rgb.astype(np.uint8).tobytes()},
+                                use_bin_type=True), _zmq.NOBLOCK)
+                    except Exception:                      # noqa: BLE001
+                        pass
+                on = state["on"]
+                if on and d is None:
+                    d = (ROOT / "data" / "sessions" / state["session"]
+                         / f"cloud_{serial}")
+                    d.mkdir(parents=True, exist_ok=True)
+                    tfh = open(d.parent / f"cloud_t_{serial}.msgpack", "ab")
+                    n, nbytes = 0, 0
+                    print(f"\n[k4a:{serial}] 开始录点云 -> {d}")
+                elif not on and d is not None:
+                    secs = max(1e-6, now - t0_rec)
+                    hz = n / secs
+                    warn = ("   <-- 低于设定,瓶颈在取点云而不是写盘;"
+                            "--rec-hz 是上限,不能让源变快"
+                            if hz < 0.7 * args.rec_hz else "")
+                    print(f"\n[k4a:{serial}] 停止,共 {n} 帧 / {nbytes/1e6:.1f} MB "
+                          f"({nbytes/1e6/secs:.1f} MB/s,实测 {hz:.1f} Hz"
+                          f"/设定 {args.rec_hz:.0f} Hz){warn}")
+                    tfh.close()
+                    tfh = None
+                    d = None
+                    continue
+                if d is None:
+                    continue
+                if n == 0:
+                    t0_rec = now
+                if now - t_last < 1.0 / max(args.rec_hz, 1e-6):
+                    continue
+                t_last = now
+                if args.rec_voxel > 0:
+                    cloud = voxel_downsample(cloud, args.rec_voxel)
+                xyz, rgb = cloud.xyz, cloud.rgb
+                # int16 毫米、不压缩。实测(9.3 万点):压缩 float32 是 61 ms/帧、
+                # 1.29 MB;int16 毫米不压缩是 1.0 ms/帧、0.84 MB —— 又快 60 倍又
+                # 更小。毫米是 k4a 的原生单位,不是精度损失。**单位写进文件**:
+                # 这个仓库全线用米,毫米当米读就是 1000 倍的静默错误。
+                f = d / f"{n:06d}.npz"
+                np.savez(f, xyz_mm=(xyz * 1000.0).astype(np.int16),
+                         rgb=rgb.astype(np.uint8), unit=np.bytes_(b"millimetre"))
+                nbytes += f.stat().st_size
+                tfh.write(msgpack.packb({"t_wall_us": int(now * 1e6), "i": n,
+                                         "n_points": int(len(xyz))},
+                                        use_bin_type=True))
+                n += 1
+        except Exception as e:                             # noqa: BLE001
+            # 一台相机死了不拖累别的相机;打清楚是谁死的、为什么。
+            print(f"\n[k4a:{serial or dev_id}] 采集线程退出:{type(e).__name__} {e}")
+        finally:
+            if tfh is not None:
+                tfh.close()
+
+    threads = [threading.Thread(target=worker, args=c, daemon=True)
+               for c in cams]
+    for th in threads:
+        th.start()
     try:
-        for _, cloud in gen:
-            now = time.time()
-            if view_pub is not None and now - view_last >= 0.2:
-                view_last = now
-                vc = voxel_downsample(cloud, 0.02)
-                try:
-                    view_pub.send(msgpack.packb(
-                        {"t_wall_us": int(now * 1e6), "n": int(len(vc.xyz)),
-                         "xyz_mm": (vc.xyz * 1000.0).astype(np.int16).tobytes(),
-                         "rgb": vc.rgb.astype(np.uint8).tobytes()},
-                        use_bin_type=True), _zmq.NOBLOCK)
-                except Exception:                          # noqa: BLE001
-                    pass
-            st = ctl.latest(now) or {}
-            on = bool(st.get("recording") and st.get("session"))
-            if on and d is None:
-                d = ROOT / "data" / "sessions" / str(st["session"]) / "cloud"
-                d.mkdir(parents=True, exist_ok=True)
-                tfh = open(d.parent / "cloud_t.msgpack", "ab")
-                n, nbytes = 0, 0
-                print(f"\n[k4a] 开始录点云 -> {d}")
-            elif not on and d is not None:
-                secs = max(1e-6, now - t0_rec)
-                hz = n / secs
-                warn = ("   <-- 低于设定,瓶颈在取点云而不是写盘;"
-                        "--rec-hz 是上限,不能让源变快"
-                        if hz < 0.7 * args.rec_hz else "")
-                print(f"\n[k4a] 停止,共 {n} 帧 / {nbytes/1e6:.1f} MB "
-                      f"({nbytes/1e6/secs:.1f} MB/s,实测 {hz:.1f} Hz"
-                      f"/设定 {args.rec_hz:.0f} Hz){warn}")
-                tfh.close(); tfh = None; d = None
-                continue
-            if d is None:
-                continue
-            if n == 0:
-                t0_rec = now
-            if now - t_last < 1.0 / max(args.rec_hz, 1e-6):
-                continue
-            t_last = now
-            if args.rec_voxel > 0:
-                cloud = voxel_downsample(cloud, args.rec_voxel)
-            xyz, rgb = cloud.xyz, cloud.rgb
-            # int16 毫米、不压缩。实测(9.3 万点):压缩 float32 是 61 ms/帧、
-            # 1.29 MB;int16 毫米不压缩是 1.0 ms/帧、0.84 MB —— 又快 60 倍又更
-            # 小(float32 的随机低位压不动,而 int16 直接减半)。毫米还是 k4a
-            # 的原生单位,所以这不是精度损失。
-            # **单位写进文件**:这个仓库全线用米,毫米当米读就是 1000 倍的静默
-            # 错误,脚本自己的文件头就警告过这一点。
-            f = d / f"{n:06d}.npz"
-            np.savez(f, xyz_mm=(xyz * 1000.0).astype(np.int16),
-                     rgb=rgb.astype(np.uint8), unit=np.bytes_(b"millimetre"))
-            nbytes += f.stat().st_size
-            tfh.write(msgpack.packb({"t_wall_us": int(now * 1e6), "i": n,
-                                     "n_points": int(len(xyz))},
-                                    use_bin_type=True))
-            n += 1
+        while any(th.is_alive() for th in threads):
+            st = ctl.latest(time.time()) or {}
+            state["on"] = bool(st.get("recording") and st.get("session"))
+            if state["on"]:
+                state["session"] = str(st["session"])
+            time.sleep(0.02)
     except KeyboardInterrupt:
         pass
     finally:
-        if tfh is not None:
-            tfh.close()
+        state["stop"] = True
+        for th in threads:
+            th.join(timeout=5)
     return 0
 
 
@@ -690,6 +749,8 @@ def main() -> int:
     ap.add_argument("--rec-voxel", type=float, default=0.01,
                     help="录制时的体素边长,单位米。0 = 不降采样。默认 1cm:"
                          "整帧 15 万点未降采样是 166 MB/s,磁盘只够录 46 分钟")
+    ap.add_argument("--mock-cams", type=int, default=1,
+                    help="mock 模式模拟几台相机(多相机录制的免硬件测试用)")
     ap.add_argument("--pub-view", metavar="ADDR", default="",
                     help="把降采样点云(约 5Hz)发布到此 zmq 地址,供主页面"
                          "(viser_isaac_mirror)显示相机画面与连接状态。与录制"

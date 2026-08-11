@@ -190,9 +190,11 @@ class Mirror:
         # y->-z,前方指向 +x,直立不倒挂。
         self.cam_sock = None
         self.n_cam = 0
-        self._cam_npts = 0
         self._cam_last = 0.0
-        self._cam_pc = None
+        # 多相机:按序列号各一份点云与计数,新序列号出现时在旁边再排一台的
+        # 位置(外参都没标,并排看内容即可)
+        self._cam_pcs: dict = {}
+        self._cam_stat: dict = {}
         self._CAM_TO_VISER = np.array([[0.0, 0.0, 1.0],
                                        [-1.0, 0.0, 0.0],
                                        [0.0, -1.0, 0.0]])
@@ -347,29 +349,41 @@ class Mirror:
             except zmq.Again:
                 pass
         if self.cam_sock is not None:
+            # CONFLATE 每次只留最新一条;多相机各 5Hz 交替发,单个 tick 只收
+            # 一条也够(页面 50Hz tick,远快于来流)。
             try:
                 c = msgpack.unpackb(self.cam_sock.recv(zmq.NOBLOCK), raw=False)
+                serial = str(c.get("serial", "cam"))
                 pts = (np.frombuffer(c["xyz_mm"], dtype=np.int16)
                        .reshape(-1, 3).astype(np.float32) / 1000.0)
                 cols = np.frombuffer(c["rgb"], dtype=np.uint8).reshape(-1, 3)
-                pts = pts @ self._CAM_TO_VISER.T + self._CAM_OFFSET
-                if self._cam_pc is None:
-                    self._cam_pc = self.server.scene.add_point_cloud(
-                        "/camera_view", points=pts, colors=cols,
-                        point_size=0.012)
+                if serial not in self._cam_pcs:
+                    idx = len(self._cam_pcs)
+                    off = self._CAM_OFFSET + np.array([0.0, -1.6 * idx, 0.0])
+                    self._cam_pcs[serial] = {
+                        "off": off,
+                        "pc": self.server.scene.add_point_cloud(
+                            f"/camera_view/{serial}",
+                            points=pts @ self._CAM_TO_VISER.T + off,
+                            colors=cols, point_size=0.012)}
+                    print(f"[mirror] 相机 {serial} 的画面已加入场景")
                 else:
-                    self._cam_pc.points = pts
-                    self._cam_pc.colors = cols
+                    h = self._cam_pcs[serial]
+                    h["pc"].points = pts @ self._CAM_TO_VISER.T + h["off"]
+                    h["pc"].colors = cols
+                self._cam_stat[serial] = self._cam_stat.get(serial, 0) + 1
                 self.n_cam += 1
-                self._cam_npts = len(pts)
                 self._cam_last = time.time()
             except zmq.Again:
                 pass
             if self._cam_last:
                 age = time.time() - self._cam_last
-                self.g_cam.value = (f"✅ {self.n_cam} 帧 · 最近 {self._cam_npts} 点"
-                                    if age < 2.0 else
-                                    f"⚠ 断流 {age:.0f}s(相机进程停了?)")
+                if age < 2.0:
+                    per = " · ".join(f"{s} {n}帧"
+                                     for s, n in self._cam_stat.items())
+                    self.g_cam.value = f"✅ {len(self._cam_pcs)} 台:{per}"
+                else:
+                    self.g_cam.value = f"⚠ 断流 {age:.0f}s(相机进程停了?)"
         try:
             m = msgpack.unpackb(self.sock.recv(zmq.NOBLOCK), raw=False)
         except zmq.Again:

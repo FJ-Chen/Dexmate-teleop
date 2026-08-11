@@ -9,9 +9,9 @@ SESS="_dev_cloud"
 # 所以测试必须先清掉上次留下的目录 —— 否则读到的是新旧两跑拼在
 # 一起的流,时间跨度会变成几小时,而断言看起来像产品坏了。
 shutil.rmtree(ROOT/'data/sessions'/'_dev_cloud', ignore_errors=True)
-ctl = ControlPublisher("tcp://*:5584")
+ctl = ControlPublisher("tcp://*:16596")   # 隔离端口,绝不用生产的 5584
 p = subprocess.Popen([str(ROOT/".venv/bin/python"), "-u", "scripts/kinect_pointcloud.py",
-                      "--source","mock","--record-session","tcp://127.0.0.1:5584"],
+                      "--source","mock","--mock-cams","2","--record-session","tcp://127.0.0.1:16596"],
                      cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 t0=time.time()
 while time.time()-t0 < 14:
@@ -21,11 +21,16 @@ while time.time()-t0 < 14:
 p.terminate(); p.wait(timeout=10); out=p.stdout.read()
 print("\n".join("    "+l for l in out.strip().splitlines()[-4:]))
 d = ROOT/"data/sessions"/SESS
-files=sorted((d/"cloud").glob("*.npz")) if (d/"cloud").exists() else []
-ok = len(files)>0
-print(f"[{'通过' if ok else '失败'}] 点云落盘 {len(files)} 帧")
+# 多相机:两台 mock 各有自己的目录与时间戳流
+dirs = sorted(d.glob("cloud_MOCK*"))
+ok = len(dirs) == 2 and all((d/f"cloud_t_{x.name[6:]}.msgpack").exists() for x in dirs)
+print(f"[{'通过' if ok else '失败'}] 两台相机各自落盘:{[x.name for x in dirs]}")
 if not ok: sys.exit(1)
-rows=list(msgpack.Unpacker(open(d/"cloud_t.msgpack","rb"), raw=False))
+files=sorted(dirs[0].glob("*.npz"))
+ok = len(files)>0 and len(sorted(dirs[1].glob("*.npz")))>0
+print(f"[{'通过' if ok else '失败'}] 每台都有帧(台1 {len(files)},台2 {len(sorted(dirs[1].glob('*.npz')))})")
+if not ok: sys.exit(1)
+rows=list(msgpack.Unpacker(open(d/f"cloud_t_{dirs[0].name[6:]}.msgpack","rb"), raw=False))
 tw=np.array([r["t_wall_us"] for r in rows])/1e6
 dur=tw[-1]-tw[0]
 hz=(len(rows)-1)/dur if dur>0 else 0

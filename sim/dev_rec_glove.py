@@ -10,10 +10,10 @@ SESS = "_dev_glove"
 # 所以测试必须先清掉上次留下的目录 —— 否则读到的是新旧两跑拼在
 # 一起的流,时间跨度会变成几小时,而断言看起来像产品坏了。
 shutil.rmtree(ROOT/'data/sessions'/'_dev_glove', ignore_errors=True)
-ctl = ControlPublisher("tcp://*:5584")
+ctl = ControlPublisher("tcp://*:16597")   # 隔离端口,绝不用生产的 5584
 p = subprocess.Popen([str(ROOT/".venv/bin/python"), "-u", "scripts/teleop_retarget.py",
                       "--source", "mock", "--hand", "right", "--no-pub",
-                      "--control", "tcp://127.0.0.1:5584", "--duration", "12"],
+                      "--control", "tcp://127.0.0.1:16597", "--duration", "12"],
                      cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                      env={**__import__("os").environ, "PYTHONPATH": ""})
 t0 = time.time()
