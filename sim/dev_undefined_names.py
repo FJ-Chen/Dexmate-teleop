@@ -25,7 +25,11 @@ import sys
 DUNDERS = {"__file__", "__name__", "__doc__", "__package__", "__spec__",
            "__loader__", "__builtins__", "__debug__", "__path__"}
 SKIP_DIRS = {".venv", ".venv-isaac", ".venv-pico", ".git", "__pycache__",
-             "assets", "logs", "data", "third_party", "thirdparty"}
+             "assets", "logs", "data", "third_party", "thirdparty",
+             # 第三方检出(git 已忽略,不属于本仓代码)。不排除的话它的
+             # build/ 产物有 9 处上游自身的可疑名,会把「0 命中才有意义」
+             # 的判据搅浑 —— 2026-08-10 深夜实测。
+             "curobo"}
 
 
 def module_names(st: symtable.SymbolTable) -> set[str]:
