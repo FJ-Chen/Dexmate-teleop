@@ -467,6 +467,13 @@ class Console:
             #    里消失,腕误差与无防护基线持平(17.7/12.8mm)。机理回归见
             #    sim/dev_relax_latch.py(在 check_all 里)。
             guard = " --self-collision hold --relax-at-limit 0.01 --relax-margin 3.0"
+            # IK 后端切换:环境变量 VEGA_IK=curobo 时试用 curobo 后端(须代码里
+            # 已有该选项),默认不设 = pink,行为与从前逐位相同。做成环境变量
+            # 而不是页面控件:这是试验期开关,页面只留操作者日常要用的东西。
+            _ik = os.environ.get("VEGA_IK", "").strip()
+            if _ik:
+                guard += f" --ik {_ik}"
+                print(f"[console] IK 后端:{_ik}(VEGA_IK 环境变量指定)")
             # 一个下拉顶两个开关:增量朝向必须配默认姿势锚点,配错实测 96.98%
             guard += (" --wrist-map incremental" if "增量" in self.d_wrist.value
                       else " --wrist-map absolute")
