@@ -41,6 +41,7 @@ CHECKS = [
     ("cuRobo IK 接口单测", [PY_ISAAC, "-m", "pytest",
                         "tests/test_curobo_ik.py", "-q"], 30, False),
     ("真机姿态回显", [PY, "sim/dev_robot_echo.py"], 10, False),
+    ("相机画面进页面", [PY, "sim/dev_cam_view.py"], 20, False),
     ("点云自检(合成)", [PY, "scripts/kinect_pointcloud.py", "--self-check"], 20, False),
     ("对比台自检", [PY, "sim/viser_verify_selfcheck.py"], 40, False),
     ("桥接台架", [PY, "sim/dev_bridge_sync.py"], 60, False),

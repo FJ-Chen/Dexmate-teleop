@@ -553,7 +553,8 @@ class Console:
         if not fake and (self.dev.get("cam") or 0) > 0:
             self._start("camera",
                         f"{PY['venv']} -u scripts/kinect_pointcloud.py "
-                        f"--record-session tcp://127.0.0.1:5584")
+                        f"--record-session tcp://127.0.0.1:5584 "
+                        f"--pub-view 'tcp://*:5591'")
 
     def stop_stack(self):
         # 仿真进程必须走正常退出(广播 shutdown,它自己收尾)。用信号杀

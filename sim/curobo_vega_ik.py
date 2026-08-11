@@ -43,8 +43,14 @@ playlist_all13 全 6889 帧):贴限位帧 5.85%→0.01%、>5° 跳变 7.90%→0.
 拧腕 150° 场景下它经由整只腕(j5-j7 联动)绕行达成了需求朝向、全程贴限位
 0%,需求回量程后 1.5 秒指数收敛回 0°—— 不锁死。
 
-肘部低权任务与操作者回转角(swivel)不支持:对应方法见下,前者按 Pink
-默认(elbow_cost=0)同样是无操作,后者收到非 None 目标即抛错。
+肘部低权位置任务不支持(按 Pink 默认 elbow_cost=0 同样是无操作;且搬肘部
+位置本来就是被判死的路 —— magicdexmate/swivel.py 记载五次实测全败,腕残差
+30→475mm)。操作者回转角改为**客户端零空间限速跟随**(2026-08-11,响应
+「臂形要像操作者」硬需求):每帧解算后,在腕任务雅可比的零空间方向上朝
+操作者回转角挪一小步,步长受 swivel_rate_deg 限速 —— 零空间修正对腕位姿
+一阶无损,限速防止与腕任务打架(Pink 的 --null-bias 每子步取满线搜索最优
+被实测判不可用,教训在此)。null_bias=0(默认)时整个机制不执行,行为与
+接入时逐位相同。
 
 耗时(RTX 3070 Ti Laptop,预热后稳态与预热分开报;50Hz 环给 IK 的预算
 约 5ms,这组数是进程内/异步架构选型的硬门槛):
@@ -343,7 +349,8 @@ class CuroboVegaIK:
     def __init__(self, urdf_path: str = DEFAULT_URDF,
                  home_arm: dict | None = None, dt: float = 1.0 / 50.0,
                  position_weight: float = 1.0, orientation_weight: float = 0.05,
-                 local_iters: int = 100):
+                 local_iters: int = 100, null_bias: float = 0.0,
+                 swivel_rate_deg: float = 60.0):
         # local_iters 默认 100:200 次(上游默认)与 100 次在全部三份素材
         # 上指标一致,耗时 11.3ms → 7.5ms。teleop 侧(--curobo-iters)默认 40。
         _check_iters(local_iters)
@@ -361,9 +368,24 @@ class CuroboVegaIK:
         self.dt = float(dt)
         self.config = _ArmConfig(self.q_home.copy())
 
-        # teleop 在 branch_at_engage 分支会赋值这个属性;cuRobo 后端没有
-        # 零空间线搜索,值被保存但不参与求解(见 set_swivel_target 的抛错)。
-        self.null_bias = 0.0
+        # 回转角跟随的增益(teleop 的 --null-bias;branch_at_engage 分支也会
+        # 直接赋值这个属性)。0 = 机制整体关闭,solve 里那段代码不执行。
+        # 与 Pink 的线搜索不同,这里是限速的零空间小步(见 _swivel_follow)。
+        self.null_bias = float(null_bias)
+        self._swivel_tgt: dict = {}
+        # 回转角跟随速度上限 [rad/s]。默认 60°/s:操作者甩臂实测能到
+        # 100°/s+,但跟随步是叠在解算之后的,快过腕任务的纠错速度就会打架
+        # (Pink 满步线搜索腕误差 12.7→69.6mm 的教训);台架扫参定稿前先取
+        # 保守值,量化数据出来后在这里更新。
+        self._swivel_rate = float(np.radians(swivel_rate_deg))
+        # 生效证明:n = 实际执行了跟随步的帧数,skip = 有目标但因奇异/
+        # 敏感度过低跳过的帧数。teleop 的 summary 打不打由它说了算。
+        self.swivel_follow_stat = {"n": 0, "skip": 0}
+        self._arm_cols = {}
+        for hand in EE_FRAME:
+            pre = "R" if hand == "right" else "L"
+            self._arm_cols[hand] = [self.pin_names.index(f"{pre}_arm_j{i}")
+                                    for i in range(1, 8)]
         # 限位放松机制未实现:统计恒为零。teleop 的 summary 会如实打出
         # 「NEVER FIRED」,而不是假装放松过。
         self.relax_stat = {"n": 0, "steps": 0}
@@ -516,13 +538,74 @@ class CuroboVegaIK:
         self._tgt[hand] = pin.SE3(M.rotation.copy(), M.translation.copy())
 
     def set_swivel_target(self, hand: str, angle_rad: float | None):
-        """冗余回转角控制未实现。None(清除)照单收下 —— teleop 的关闭
-        路径会传;真要钉回转角(--null-bias > 0 / --branch-at-engage)
-        必须用 Pink 后端,这里直接抛错而不是安静地不执行。"""
-        if angle_rad is not None:
-            raise NotImplementedError(
-                "cuRobo 后端不支持回转角目标(--null-bias/--branch-at-engage"
-                ");请改用 --ik pink")
+        """这条臂的回转角目标(操作者肘绕自己肩-腕轴的角度),None = 清除。
+        只在 null_bias > 0 时参与求解(见 _swivel_follow);teleop 的
+        --null-bias 0 默认下这里只是存值,行为与不支持时逐位相同。"""
+        self._swivel_tgt[hand] = angle_rad
+
+    def _swivel_follow(self):
+        """解算后的零空间限速步:把每条臂的回转角朝操作者目标挪一点。
+
+        为什么放在客户端而不是 cuRobo 内部:仓库里两条已付学费的路都不走 ——
+        ① 肘部位置任务(人机比例不同,目标常不可达,腕残差 30→475mm,
+        magicdexmate/swivel.py 记载);② Pink 的每子步满步线搜索(与腕任务
+        争,腕误差 12.7→69.6mm)。这里取零空间方向(腕任务雅可比 SVD 的
+        末奇异向量,对腕位姿一阶无损),而且步长限速(_swivel_rate × dt ×
+        null_bias),错不动腕、也追不疯。敏感度用数值差分现算,不依赖
+        cuRobo 内部结构 —— 协议与服务端零改动。
+
+        代价(如实):客户端改写 q 后,服务端下一帧检测到构型变动会清掉
+        速度状态,加速度正则失去历史;速度钳制不受影响(它相对客户端送去
+        的 q)。抖动是否可接受由台架素材 4 出数。
+        """
+        q = self.config.q
+        pin.framesForwardKinematics(self.model, self.data, q)
+        pin.updateFramePlacements(self.model, self.data)
+        for hand, want in self._swivel_tgt.items():
+            if want is None:
+                continue
+            got = self._robot_swivel(hand)
+            if got is None:
+                self.swivel_follow_stat["skip"] += 1
+                continue
+            err = (want - got + np.pi) % (2 * np.pi) - np.pi
+            cols = self._arm_cols[hand]
+            pin.computeJointJacobians(self.model, self.data, q)
+            J = pin.getFrameJacobian(
+                self.model, self.data, self.model.getFrameId(EE_FRAME[hand]),
+                pin.ReferenceFrame.LOCAL_WORLD_ALIGNED)[:, cols]
+            _, sv, Vt = np.linalg.svd(J)
+            if sv[-1] < 1e-3 * max(sv[0], 1e-9):
+                self.swivel_follow_stat["skip"] += 1   # 奇异态,零空间不可信
+                continue
+            n = Vt[-1]
+            # 数值敏感度:沿零空间方向挪 1 毫弧度,回转角变多少
+            eps = 1e-3
+            qq = q.copy()
+            qq[cols] = qq[cols] + eps * n
+            pin.framesForwardKinematics(self.model, self.data, qq)
+            got_eps = self._robot_swivel(hand)
+            pin.framesForwardKinematics(self.model, self.data, q)  # 还原 FK
+            if got_eps is None:
+                self.swivel_follow_stat["skip"] += 1
+                continue
+            g = ((got_eps - got + np.pi) % (2 * np.pi) - np.pi) / eps
+            if abs(g) < 1e-2:      # 该方向几乎不动回转角,除出来是天文步长
+                self.swivel_follow_stat["skip"] += 1
+                continue
+            # 双重限速,量纲各自成立:回转角侧每帧至多 rate×dt×bias,
+            # 关节侧每帧至多 0.05 rad(≈2.9°,与手臂速度限位 vel×dt 同量级
+            # —— 敏感度 g 小时 ds/g 会放大,必须再钳一次关节步长)。
+            ds = float(np.clip(err, -self._swivel_rate * self.dt * self.null_bias,
+                               +self._swivel_rate * self.dt * self.null_bias))
+            step = float(np.clip(ds / g, -0.05, 0.05))
+            q[cols] = np.clip(q[cols] + step * n,
+                              self.model.lowerPositionLimit[cols],
+                              self.model.upperPositionLimit[cols])
+            self.swivel_follow_stat["n"] += 1
+            pin.framesForwardKinematics(self.model, self.data, q)
+        pin.updateFramePlacements(self.model, self.data)
+        self.config.q = q
 
     # -- 求解 -----------------------------------------------------------------
     def solve(self):
@@ -539,6 +622,9 @@ class CuroboVegaIK:
         if not r.get("ok"):
             raise RuntimeError(f"cuRobo 求解失败:{r.get('err')}")
         self.config.q = np.asarray(r["q"], dtype=np.float64)
+        if self.null_bias > 0.0 and any(
+                v is not None for v in self._swivel_tgt.values()):
+            self._swivel_follow()
         return self.config.q.copy()
 
     # -- 与 Pink 同名同义的账务方法 -------------------------------------------

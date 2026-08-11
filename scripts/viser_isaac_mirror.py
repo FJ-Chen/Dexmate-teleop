@@ -72,7 +72,8 @@ class Mirror:
                  urdf_path: pathlib.Path = DEFAULT_URDF,
                  extra_state=None, real_buttons=None,
                  pico: str = "tcp://127.0.0.1:5581",
-                 robot_state: str = "tcp://127.0.0.1:5590"):
+                 robot_state: str = "tcp://127.0.0.1:5590",
+                 cam_view: str = "tcp://127.0.0.1:5591"):
         self.server = server
         # extra keys merged into every switch broadcast (the console adds
         # hand_enabled / recording through this)
@@ -104,6 +105,7 @@ class Mirror:
         self.g_track = g.add_text("跟随状态", "-")
         self.g_pinned = g.add_text("顶在限位的关节", "-")
         self.g_hand = g.add_text("Sharpa 手", "-")
+        self.g_cam = g.add_text("相机画面", "无(相机进程未运行)")
         self.g_pico = g.add_text("操作者", "等待 PICO …")
         self.g_pico_palm = g.add_text("操作者掌心", "-")
 
@@ -182,6 +184,25 @@ class Mirror:
             self.robot_sock.setsockopt(zmq.CONFLATE, 1)
             self.robot_sock.connect(robot_state)
             print(f"[mirror] 订阅真机回显 {robot_state}(仿真未运行时显示)")
+        # 相机画面流(kinect_pointcloud --pub-view)。外参没标,点云与机器人
+        # 不在同一坐标系,所以摆在机器人**旁边**的固定位置看内容;标完外参再
+        # 谈对齐。相机光轴系(x右 y下 z前)转到 viser 的 z 上:z->x、x->-y、
+        # y->-z,前方指向 +x,直立不倒挂。
+        self.cam_sock = None
+        self.n_cam = 0
+        self._cam_npts = 0
+        self._cam_last = 0.0
+        self._cam_pc = None
+        self._CAM_TO_VISER = np.array([[0.0, 0.0, 1.0],
+                                       [-1.0, 0.0, 0.0],
+                                       [0.0, -1.0, 0.0]])
+        self._CAM_OFFSET = np.array([1.2, 1.2, 0.8])
+        if cam_view:
+            self.cam_sock = zmq.Context.instance().socket(zmq.SUB)
+            self.cam_sock.setsockopt(zmq.SUBSCRIBE, b"")
+            self.cam_sock.setsockopt(zmq.CONFLATE, 1)
+            self.cam_sock.connect(cam_view)
+            print(f"[mirror] 订阅相机画面 {cam_view}")
         self.n_arm = 0
         self.last = 0.0
         # Held across ticks so a tick with no arm message still draws the arm
@@ -325,6 +346,30 @@ class Mirror:
                 self.n_robot += 1
             except zmq.Again:
                 pass
+        if self.cam_sock is not None:
+            try:
+                c = msgpack.unpackb(self.cam_sock.recv(zmq.NOBLOCK), raw=False)
+                pts = (np.frombuffer(c["xyz_mm"], dtype=np.int16)
+                       .reshape(-1, 3).astype(np.float32) / 1000.0)
+                cols = np.frombuffer(c["rgb"], dtype=np.uint8).reshape(-1, 3)
+                pts = pts @ self._CAM_TO_VISER.T + self._CAM_OFFSET
+                if self._cam_pc is None:
+                    self._cam_pc = self.server.scene.add_point_cloud(
+                        "/camera_view", points=pts, colors=cols,
+                        point_size=0.012)
+                else:
+                    self._cam_pc.points = pts
+                    self._cam_pc.colors = cols
+                self.n_cam += 1
+                self._cam_npts = len(pts)
+                self._cam_last = time.time()
+            except zmq.Again:
+                pass
+            if self._cam_last:
+                age = time.time() - self._cam_last
+                self.g_cam.value = (f"✅ {self.n_cam} 帧 · 最近 {self._cam_npts} 点"
+                                    if age < 2.0 else
+                                    f"⚠ 断流 {age:.0f}s(相机进程停了?)")
         try:
             m = msgpack.unpackb(self.sock.recv(zmq.NOBLOCK), raw=False)
         except zmq.Again:

@@ -55,6 +55,8 @@ def home_tgt(ik):
     session 级共享一个子进程(省两次构建),状态隔离靠这里。"""
     ik.reset_home()
     ik.ee_rot_fix = {}
+    ik.null_bias = 0.0
+    ik._swivel_tgt = {}
     ik.refresh_fk()
     tgt = {}
     for hand, frame in EE_FRAME.items():
@@ -156,12 +158,49 @@ def test_set_elbow_target_chest_noop(ik, home_tgt):
 
 
 def test_set_swivel_target(ik, home_tgt):
-    """None(清除)必须静默 —— teleop 在 --branch-at-engage 的关闭路径会
-    传;非 None 必须抛 NotImplementedError,绝不安静地不执行。"""
+    """None(清除)必须静默;非 None 在 null_bias=0(teleop 默认)下只存
+    不动 —— 解一步构型必须与不设目标时逐位相同(默认行为不变的证明)。"""
     ik.set_swivel_target("right", None)
     ik.set_swivel_target("left", None)
-    with pytest.raises(NotImplementedError):
-        ik.set_swivel_target("right", 0.5)
+
+    def settle():
+        # 两个分支走完全相同的历史(归位 -> hold -> 解两步),服务端的
+        # 热启动/速度状态因此逐位一致,才能做逐位对比。
+        ik.reset_home()
+        for hand in EE_FRAME:
+            ik.hold_target(hand)
+        ik.solve()
+        return ik.solve()
+
+    q_ref = settle()
+    ik.set_swivel_target("right", 0.5)     # 有目标但增益为零
+    q_with = settle()
+    assert np.allclose(q_with, q_ref, atol=1e-12)
+    assert ik.swivel_follow_stat["n"] == 0
+
+
+def test_swivel_follow(ik, home_tgt):
+    """臂形跟随生效证明(2026-08-11 硬需求):null_bias=1 时喂一个偏离
+    当前 20° 的回转角目标,60 步(1.2s)内回转角必须显著挪过去(>10°),
+    同时腕位置不许被拖走(零空间步一阶无损,残差 < 15mm)。"""
+    ik.refresh_fk()
+    s0 = ik._robot_swivel("right")
+    assert s0 is not None
+    want = s0 + np.radians(20.0)
+    ik.null_bias = 1.0
+    p, quat = home_tgt["right"]
+    for _ in range(60):
+        ik.set_target("right", p, quat)
+        ik.set_target("left", *home_tgt["left"])
+        ik.set_swivel_target("right", want)
+        ik.solve()
+    assert ik.swivel_follow_stat["n"] > 0, "跟随步从没执行"
+    ik.refresh_fk()
+    s1 = ik._robot_swivel("right")
+    moved = np.degrees((s1 - s0 + np.pi) % (2 * np.pi) - np.pi)
+    assert moved > 10.0, f"回转角只挪了 {moved:.1f}°"
+    err = np.linalg.norm(ik.ee_pos("right") - p) * 1000
+    assert err < 15.0, f"跟随把腕拖走了 {err:.1f}mm"
 
 
 def test_robot_swivel(ik, home_tgt):

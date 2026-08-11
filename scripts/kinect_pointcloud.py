@@ -562,6 +562,17 @@ def record_session(args) -> int:
     ctl = ControlSubscriber(args.record_session)
     print(f"[k4a] 订阅开关频道 {args.record_session};录制体素 {args.rec_voxel} m、"
           f"{args.rec_hz:.0f} Hz")
+    # 页面画面流:与录制无关,进程活着就发。页面因此能随时显示「相机拍到了
+    # 什么」和连接状态,而不必自己打开设备(Kinect 独占,页面开了录制进程就
+    # 打不开 —— 2026-08-11 用户就是被这一点卡住才有的这条流)。
+    view_pub = None
+    view_last = 0.0
+    if args.pub_view:
+        import zmq as _zmq
+        view_pub = _zmq.Context.instance().socket(_zmq.PUB)
+        view_pub.setsockopt(_zmq.SNDHWM, 2)
+        view_pub.bind(args.pub_view)
+        print(f"[k4a] 画面流发布于 {args.pub_view}(约 5 Hz,体素 2cm)")
     # frames=0 在这两个生成器里是「0 帧」不是「不限」,录制要一直跑,所以给
     # 一个足够大的数(30 fps 下约 9 小时)。
     N = 10 ** 6
@@ -576,6 +587,17 @@ def record_session(args) -> int:
     try:
         for _, cloud in gen:
             now = time.time()
+            if view_pub is not None and now - view_last >= 0.2:
+                view_last = now
+                vc = voxel_downsample(cloud, 0.02)
+                try:
+                    view_pub.send(msgpack.packb(
+                        {"t_wall_us": int(now * 1e6), "n": int(len(vc.xyz)),
+                         "xyz_mm": (vc.xyz * 1000.0).astype(np.int16).tobytes(),
+                         "rgb": vc.rgb.astype(np.uint8).tobytes()},
+                        use_bin_type=True), _zmq.NOBLOCK)
+                except Exception:                          # noqa: BLE001
+                    pass
             st = ctl.latest(now) or {}
             on = bool(st.get("recording") and st.get("session"))
             if on and d is None:
@@ -668,6 +690,10 @@ def main() -> int:
     ap.add_argument("--rec-voxel", type=float, default=0.01,
                     help="录制时的体素边长,单位米。0 = 不降采样。默认 1cm:"
                          "整帧 15 万点未降采样是 166 MB/s,磁盘只够录 46 分钟")
+    ap.add_argument("--pub-view", metavar="ADDR", default="",
+                    help="把降采样点云(约 5Hz)发布到此 zmq 地址,供主页面"
+                         "(viser_isaac_mirror)显示相机画面与连接状态。与录制"
+                         "开关无关,进程活着就一直发。控制台传 tcp://*:5591")
     ap.add_argument("--rec-hz", type=float, default=10.0,
                     help="录制帧率。相机出 30 fps,点云录制降到 10 已经够用")
     ap.add_argument("--headless-seconds", type=float, default=0.0,

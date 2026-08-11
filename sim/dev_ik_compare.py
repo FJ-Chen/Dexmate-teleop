@@ -26,6 +26,19 @@
   - 逐帧关节跳变:>5° 帧占比 [%] 与 p99 [deg](回归台 jitter 同款);
   - 单步 solve() 耗时 p50/p95 [ms]。
 
+素材 4(2026-08-11 增,「臂形要像操作者」硬需求的尺子):真实素材的目标流
+不变,另从同一份回放 msgpack 提取操作者回转角流(magicdexmate.swivel.
+operator_swivel_from_frame,与 teleop 的 _operator_swivel 同一约定,按
+sample_at(i/50) 与目标流对齐;素材已验 100% 含 body24 与三个 tracker)。
+量三个后端:pink(拉 home,不跟人)、curobo(默认,不跟人)、
+curobo-follow(--null-bias 1 的零空间限速跟随)。
+  - 臂形差:机器人回转角 vs 操作者回转角,逐帧 wrap 差 [deg] mean/max;
+  - 臂形可复现性:同一腕目标重访(位置差<2cm、朝向差<10°、间隔>5s 的帧对,
+    帧下采样 5 倍找对)时机器人回转角的差 [deg] mean/max —— 不跟人的后端
+    臂形由历史决定,重访同一位姿臂形可以不同,这个数暴露的就是它。
+对齐注:目标流前 1 秒是 auto-engage 延迟(cmd=home、人已在动),该段臂形差
+无意义但只占 <1%,三个后端同样受累,对比成立。
+
 每个会打印的数字先过「尺子自检」:拿构造出来的已知答案(贴限位序列、
 含 10° 跳变的序列、恒定目标)验金属尺本身,尺子不对直接退出 —— 这个仓库
 为「度量本身就错」付过学费(verify-the-metric-first)。
@@ -49,9 +62,12 @@ from pink_vega_ik import EE_FRAME, PinkVegaIK  # noqa: E402
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 CSV_REAL = ROOT / "logs/regress/base1_playlist_all13.csv"
+MSGPACK_REAL = ROOT / "logs/playlist_all13.msgpack"   # CSV_REAL 的同源回放
 HZ = 50.0
 NEAR_DEG = 1.0      # 贴限位判据,与 dev_limit_lock 一致
 JUMP_DEG = 5.0      # 跳变判据,与回归台一致
+WRIST_TRK = {"right": "RWRIST", "left": "LWRIST"}   # teleop 默认序列号
+WAIST_TRK = "WAIST"
 
 
 # ---------------------------------------------------------------- 尺子 ----
@@ -178,17 +194,143 @@ def material_from_joint_csv(model, data, pin_names, csv_path,
     return frames
 
 
+# ------------------------------------------------ 素材 4:臂形的尺 ----
+def operator_swivel_series(msgpack_path, n_frames) -> list:
+    """回放素材的操作者回转角流 [{hand: rad|None}, ...],按 sample_at(i/HZ)
+    与 50Hz 目标流对齐(与 teleop 回放消费同一采样法)。"""
+    from magicdexmate.sources.pico_source import PicoLogSource
+    from magicdexmate.swivel import operator_swivel_from_frame
+    src = PicoLogSource(str(msgpack_path))
+    out = []
+    for i in range(n_frames):
+        fr = src.sample_at(i / HZ)
+        trk = fr.trackers or {}
+        out.append({h: operator_swivel_from_frame(
+            h, fr.body24, trk.get(WRIST_TRK[h]), trk.get(WAIST_TRK))
+            for h in EE_FRAME})
+    return out
+
+
+def robot_swivel_series(model, data, qs) -> list:
+    """解出的 q 流 -> 机器人回转角流(同一 swivel_angle 定义)。"""
+    from magicdexmate.swivel import swivel_angle
+    from pink_vega_ik import ELBOW_FRAME, SHOULDER_FRAME
+    fid = {h: tuple(model.getFrameId(f) for f in
+                    (SHOULDER_FRAME[h], ELBOW_FRAME[h], EE_FRAME[h]))
+           for h in EE_FRAME}
+    out = []
+    for q in qs:
+        pin.framesForwardKinematics(model, data, q)
+        pin.updateFramePlacements(model, data)
+        out.append({h: swivel_angle(data.oMf[a].translation,
+                                    data.oMf[b].translation,
+                                    data.oMf[c].translation)
+                    for h, (a, b, c) in fid.items()})
+    return out
+
+
+def _wrap_deg(a: float) -> float:
+    return float(np.degrees((a + np.pi) % (2 * np.pi) - np.pi))
+
+
+def swivel_diff_stats(rob: list, op: list) -> dict:
+    """逐帧 |机器人回转角 - 操作者回转角|(wrap 后,度)。任一侧取不到的
+    帧不计,n 如实报。"""
+    out = {}
+    for h in EE_FRAME:
+        d = [abs(_wrap_deg(r[h] - o[h]))
+             for r, o in zip(rob, op) if r[h] is not None and o[h] is not None]
+        out[h] = {"mean": float(np.mean(d)) if d else float("nan"),
+                  "max": float(np.max(d)) if d else float("nan"),
+                  "n": len(d)}
+    return out
+
+
+def revisit_stats(frames: list, rob: list, pos_tol_m=0.02, ori_tol_deg=10.0,
+                  gap_s=5.0, stride=5) -> dict:
+    """同一腕目标重访时臂形(回转角)的可复现性。
+
+    帧对判据:同手目标位置差 < 2cm 且朝向差 < 10°,间隔 > 5s;帧按 stride
+    下采样找对(全量两两配对是 O(n²) 的 47M 对,下采样 5 倍后 1.9M 对,
+    对上的量级不变)。返回 {hand: {mean, max, pairs}},度。"""
+    out = {}
+    idx = np.arange(0, len(frames), stride)
+    gap = int(gap_s * HZ)
+    for h in EE_FRAME:
+        P = np.array([frames[i][h][0] for i in idx])
+        Rm = np.array([_rot_from_wxyz(frames[i][h][1]) for i in idx])
+        sw = [rob[i][h] for i in idx]
+        diffs = []
+        for a in range(len(idx)):
+            if sw[a] is None:
+                continue
+            close = np.where(np.linalg.norm(P[a + 1:] - P[a], axis=1)
+                             < pos_tol_m)[0] + a + 1
+            for b in close:
+                if (idx[b] - idx[a]) <= gap or sw[b] is None:
+                    continue
+                if ang_deg(Rm[a], Rm[b]) < ori_tol_deg:
+                    diffs.append(abs(_wrap_deg(sw[a] - sw[b])))
+        out[h] = {"mean": float(np.mean(diffs)) if diffs else float("nan"),
+                  "max": float(np.max(diffs)) if diffs else float("nan"),
+                  "pairs": len(diffs)}
+    return out
+
+
+def shape_ruler_selfcheck() -> int:
+    """臂形尺的已知答案自检:尺子不对,素材 4 的数字没有意义。"""
+    bad = 0
+    # 逐帧差:机器人流 = 操作者流 + 10°,mean 与 max 都必须是 10
+    op = [{"right": 0.3 + 0.1 * np.sin(i / 7), "left": None}
+          for i in range(200)]
+    rob = [{"right": v["right"] + np.radians(10.0), "left": 0.0} for v in op]
+    r = swivel_diff_stats(rob, op)
+    ok = (abs(r["right"]["mean"] - 10.0) < 1e-6
+          and abs(r["right"]["max"] - 10.0) < 1e-6
+          and r["right"]["n"] == 200 and r["left"]["n"] == 0)
+    print(f"[尺] 臂形逐帧差:+10° 偏移报 mean {r['right']['mean']:.2f}° "
+          f"max {r['right']['max']:.2f}°(None 侧 n={r['left']['n']})"
+          f"  {'✅' if ok else '❌ 尺子坏了'}")
+    bad += 0 if ok else 1
+    # 重访可复现性:同一目标位姿访问两次、第二次回转角差 30°,必须被抓到
+    p = np.array([0.4, -0.2, 1.1])
+    quat = [1.0, 0.0, 0.0, 0.0]
+    far = (np.array([0.1, 0.5, 0.8]), [0.0, 1.0, 0.0, 0.0])
+    n = 700     # 前 100 帧在目标 A,中间去别处,最后 100 帧回目标 A
+    frames = []
+    rob = []
+    for i in range(n):
+        at_a = i < 100 or i >= n - 100
+        # 左臂目标每帧挪 1cm:间隔 >250 帧的两帧相距 >2.5m,凑不成对 ——
+        # 否则恒定目标会造出 24 万个零差帧对,白算十几秒
+        frames.append({"right": (p, quat) if at_a else far,
+                       "left": (p + np.array([0.5 + 0.01 * i, 0.5, 0.5]), quat)})
+        rob.append({"right": (np.radians(30.0) if i >= n - 100 else 0.0),
+                    "left": 0.0})
+    r = revisit_stats(frames, rob, stride=1)
+    ok = r["right"]["pairs"] > 0 and abs(r["right"]["max"] - 30.0) < 1e-6
+    print(f"[尺] 臂形重访:两次访问差 30° 报 max {r['right']['max']:.1f}°"
+          f"({r['right']['pairs']} 对)  {'✅' if ok else '❌ 尺子坏了'}")
+    bad += 0 if ok else 1
+    return bad
+
+
 # ------------------------------------------------------------- 跑一遍 ----
-def run_backend(ik, frames, model, data) -> dict:
-    """喂同一份目标流,返回全部指标。ik 需要 set_target/solve/reset_home。"""
+def run_backend(ik, frames, model, data, swivel: list | None = None) -> dict:
+    """喂同一份目标流,返回全部指标。ik 需要 set_target/solve/reset_home。
+    swivel 非空时逐帧喂 set_swivel_target(增益为零的后端存而不用,行为
+    不变 —— pink 的 solve 只在 null_bias>0 时碰零空间(pink_vega_ik.py
+    的门),curobo 同款门并有单测 test_set_swivel_target 逐位证明)。"""
     lo = model.lowerPositionLimit
     hi = model.upperPositionLimit
     ik.reset_home()
     qs, times = [], []
     perr, oerr = [], []
-    for tgt in frames:
+    for i, tgt in enumerate(frames):
         for h, (p, quat) in tgt.items():
             ik.set_target(h, p, quat)
+            if swivel is not None:
+                ik.set_swivel_target(h, swivel[i][h])
         t0 = time.perf_counter()
         q = ik.solve()
         times.append(time.perf_counter() - t0)
@@ -253,6 +395,7 @@ def main() -> int:
 
     bad += ruler_selfcheck(model.lowerPositionLimit.copy(),
                            model.upperPositionLimit.copy())
+    bad += shape_ruler_selfcheck()
     if bad:
         print("尺子不过,后面的数字没有意义,退出。")
         return 1
@@ -366,6 +509,57 @@ def main() -> int:
             print(f"  [自检] {n} 真实素材位置误差均值 {r['位置误差mm'][0]:.1f}mm"
                   f" < 30mm  {'✅' if ok else '❌ 失控'}")
             bad += 0 if ok else 1
+
+        # ---- 素材 4:臂形跟随(目标流同素材 3 + 操作者骨架) -------------
+        if not MSGPACK_REAL.exists():
+            print(f"❌ 缺回放素材 {MSGPACK_REAL}(臂形指标需要骨架)")
+            return 1
+        ops = operator_swivel_series(MSGPACK_REAL, len(frames))
+        avail = float(100 * np.mean([
+            all(o[h] is not None for h in EE_FRAME) for o in ops]))
+        ok = avail > 90.0
+        print(f"\n[尺] 操作者回转角可得率 {avail:.1f}%(双手同时可得的帧)"
+              f"  {'✅' if ok else '❌ 骨架大面积缺失,素材 4 不可用'}")
+        bad += 0 if ok else 1
+
+        print("构建 curobo-follow(null_bias=1,零空间限速跟随)...")
+        follow = CuroboVegaIK(dt=1.0 / HZ, null_bias=1.0)
+        res_f = run_backend(follow, frames, model, data, swivel=ops)
+        shape = {}
+        for n, r in {"pink": res3["pink"], "curobo": res3["curobo"],
+                     "cu-follow": res_f}.items():
+            rob = robot_swivel_series(model, data, r["q"])
+            shape[n] = {"d": swivel_diff_stats(rob, ops),
+                        "rv": revisit_stats(frames, rob), "r": r}
+
+        print(f"\n== 素材 4:臂形跟随(playlist_all13,{len(frames)} 帧)==")
+        print(f"{'后端':10s} {'臂形差R°(均/最大)':>18s} {'臂形差L°(均/最大)':>18s} "
+              f"{'重访差R°(均/最大/对)':>22s} {'重访差L°':>10s} "
+              f"{'腕误差mm':>9s} {'跳变>5°%':>9s}")
+        for n, s in shape.items():
+            d, rv, r = s["d"], s["rv"], s["r"]
+            print(f"{n:10s} "
+                  f"{d['right']['mean']:8.1f}/{d['right']['max']:6.1f}   "
+                  f"{d['left']['mean']:8.1f}/{d['left']['max']:6.1f}   "
+                  f"{rv['right']['mean']:6.1f}/{rv['right']['max']:6.1f}"
+                  f"/{rv['right']['pairs']:5d}   "
+                  f"{rv['left']['mean']:6.1f}/{rv['left']['max']:6.1f} "
+                  f"{r['位置误差mm'][0]:9.1f} {r['跳变']['pct5']:9.2f}")
+
+        # 自检 1:跟随的生效证明(「接好了从没执行」是这个仓库的惯犯)
+        st = follow.swivel_follow_stat
+        ok = st["n"] > 0
+        print(f"  [自检] cu-follow 跟随步执行 {st['n']} 帧、跳过 {st['skip']} 帧"
+              f"  {'✅' if ok else '❌ NEVER FIRED'}")
+        bad += 0 if ok else 1
+        # 自检 2:跟随必须真把臂形差往下拉(否则机制无效),同时腕不失控
+        m_f = np.mean([shape['cu-follow']['d'][h]['mean'] for h in EE_FRAME])
+        m_0 = np.mean([shape['curobo']['d'][h]['mean'] for h in EE_FRAME])
+        ok = m_f < m_0 and res_f["位置误差mm"][0] < 30.0
+        print(f"  [自检] 臂形差均值 curobo {m_0:.1f}° -> cu-follow {m_f:.1f}°,"
+              f"腕误差均值 {res_f['位置误差mm'][0]:.1f}mm"
+              f"  {'✅ 跟随有效且腕未失控' if ok else '❌ 跟随无效或腕被拖走'}")
+        bad += 0 if ok else 1
 
     print(f"\n{'✅ 全部通过' if bad == 0 else f'❌ {bad} 项失败'}")
     return 1 if bad else 0

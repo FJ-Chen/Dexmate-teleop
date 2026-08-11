@@ -78,6 +78,38 @@ def swivel_angle(shoulder, elbow, wrist, ref_up=np.array([0.0, 0.0, 1.0])) -> fl
     return float(np.arctan2(r @ v, r @ u))
 
 
+# SMPL body24 关节序里的肩与肘(Unity 侧固定)。此前唯一居所在
+# sim/teleop_vega_pico.py 的 _SMPL_SHOULDER/_SMPL_ELBOW(两处必须一致;
+# teleop 侧待其解冻后应改为从这里 import,消掉副本)。
+SMPL_SHOULDER = {"left": 16, "right": 17}
+SMPL_ELBOW = {"left": 18, "right": 19}
+
+
+def operator_swivel_from_frame(hand: str, body24, wrist_pose7, waist_pose7
+                               ) -> float | None:
+    """操作者的肘绕自己肩-腕轴的角度,弧度;取不到时返回 None。
+
+    与 sim/teleop_vega_pico.py 的 _operator_swivel 同一套约定(2026-08-11
+    抽出,供离线台架对回放素材直接计算):肩/肘取 body24 的 16/17、18/19,
+    腕取腕部 tracker,全部先经 process_xr_pose 换到腰 tracker 参考系再算角。
+    只搬角度不搬位置的理由见本文件模块 docstring。
+    """
+    from magicdexmate.pico.xr_pose import mat_to_pos_quat_wxyz, process_xr_pose
+    if waist_pose7 is None or body24 is None or wrist_pose7 is None:
+        return None
+    ref = np.asarray(waist_pose7, dtype=np.float64)
+    try:
+        p_w = mat_to_pos_quat_wxyz(process_xr_pose(
+            np.asarray(wrist_pose7, dtype=np.float64), ref))[0]
+        p_s = mat_to_pos_quat_wxyz(process_xr_pose(
+            np.asarray(body24[SMPL_SHOULDER[hand]], dtype=np.float64), ref))[0]
+        p_e = mat_to_pos_quat_wxyz(process_xr_pose(
+            np.asarray(body24[SMPL_ELBOW[hand]], dtype=np.float64), ref))[0]
+    except (IndexError, TypeError, ValueError):
+        return None
+    return swivel_angle(p_s, p_e, p_w)
+
+
 def elbow_from_swivel(shoulder, wrist, l_upper: float, l_fore: float,
                       angle: float, ref_up=np.array([0.0, 0.0, 1.0])):
     """Where the robot's elbow goes for a given swivel angle.
