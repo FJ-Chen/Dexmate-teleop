@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """一条命令跑完所有**不需要硬件**的检查。
 
-    cd <仓库根目录> && .venv/bin/python scripts/check_all.py
+    cd ~/dexmate/MagicDexMate && .venv/bin/python scripts/check_all.py
     .venv/bin/python scripts/check_all.py --quick     # 只跑秒级的那几项
 
 改完遥操作的任何一环之后跑这个。它把散落的台架脚本收成一个入口 —— 此前它们
@@ -48,12 +48,31 @@ QUICK = {"未定义名(全仓)", "新模块单测", "拍手对齐尺子自检", 
          "PICO 数学单测", "限位放松自锁回归"}
 
 
+def live_robot_procs() -> list[str]:
+    """已连接真机的进程。在它们面前跑测试套件出过事故:2026-08-10,桥接台架
+    把假指令发布在生产端口上,一个订阅着的真机桥接照单执行,机器人被驱动,
+    用户按了急停。订阅者不占端口绑定,所以「端口冲突会让测试自动失败」的
+    假设不成立 —— 必须显式检查并拒绝。"""
+    out = subprocess.run(["pgrep", "-af", "dexmate_bridge|sharpa_real_runner"],
+                         capture_output=True, text=True).stdout
+    return [ln for ln in out.splitlines()
+            if ("--live" in ln and "dexmate_bridge" in ln)
+            or "sharpa_real_runner" in ln]
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--quick", action="store_true", help="只跑秒级的那几项")
     ap.add_argument("--only", default="", help="只跑名字里含这个子串的项")
     args = ap.parse_args()
+
+    live = live_robot_procs()
+    if live:
+        print("⛔ 检测到已连接真机的进程,测试套件拒绝运行(先断开真机再测):")
+        for ln in live:
+            print("   ", ln)
+        return 2
 
     todo = [c for c in CHECKS
             if (not args.quick or c[0] in QUICK)

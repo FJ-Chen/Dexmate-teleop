@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """桥接程序的同步阶段能不能收敛 —— 用一个会动的假 consumer 逼它。
 
-    cd <仓库根目录> && .venv/bin/python sim/dev_bridge_sync.py
+    cd ~/dexmate/MagicDexMate && .venv/bin/python sim/dev_bridge_sync.py
 
 要证的事情
     同步阶段以 --sync-speed(默认 8 度每秒)从机器人当前位置走向操作者当前
@@ -57,17 +57,35 @@ def main() -> int:
     print(f"[台架] 头的峰值角速度 {peak:.0f} 度每秒,同步速度 {SYNC_SPEED:.0f} 度每秒 "
           f"({peak / SYNC_SPEED:.1f} 倍)。追活动目标必然收不敛。")
 
+    # ⛔ 安全:2026-08-10 真机现场事故。本台架此前把假指令绑在生产端口
+    # :5583/:5584 上,并广播 enabled=True —— 当时用户有一个已连接真机的桥接
+    # 正订阅这两个端口,把台架的合成信号(头 ±25° 摆动、手臂走向 0)当成真
+    # 指令执行,机器人被驱动,用户按了急停。两个教训:①订阅者不占端口绑定,
+    # 「端口被占会自动失败」的假设对订阅者不成立;②任何会发布指令的测试
+    # 必须用与生产完全不同的端口。因此这里改用 16583/16584,被测桥接用
+    # 参数指到同一对端口;另外开跑前检查真机进程,在就拒绝运行(双保险)。
+    _live = subprocess.run(["pgrep", "-af", "dexmate_bridge"],
+                           capture_output=True, text=True).stdout
+    _live = [ln for ln in _live.splitlines() if "--live" in ln]
+    if _live:
+        print("[台架] ⛔ 检测到已连接真机的桥接进程,拒绝运行:")
+        for ln in _live:
+            print("   ", ln)
+        return 1
+    SUB = "tcp://127.0.0.1:16583"
+    CTL = "tcp://127.0.0.1:16584"
     ctx = zmq.Context.instance()
     pub = ctx.socket(zmq.PUB)
     pub.setsockopt(zmq.SNDHWM, 2)
-    pub.bind("tcp://*:5583")
-    ctl = ControlPublisher("tcp://*:5584")
+    pub.bind("tcp://*:16583")
+    ctl = ControlPublisher("tcp://*:16584")
 
     target = sys.argv[1] if len(sys.argv) > 1 else "scripts/dexmate_bridge.py"
-    print(f"[台架] 被测程序 {target}")
+    print(f"[台架] 被测程序 {target}(专用端口 {SUB} / {CTL},与生产隔离)")
     proc = subprocess.Popen(
         [sys.executable, "-u", target,
-         "--dry-run", "--sim-start-offset", str(OFFSET_DEG),
+         "--dry-run", "--sub", SUB, "--control", CTL,
+         "--sim-start-offset", str(OFFSET_DEG),
          "--sync-speed", str(SYNC_SPEED), "--duration", str(RUN_S + 2)],
         cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     time.sleep(1.0)                       # 让订阅建立,否则前几帧会丢

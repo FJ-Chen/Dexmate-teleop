@@ -9,12 +9,20 @@
 set -e
 cd "$(dirname "$0")/.."
 
-SDK_DIR="${SDK_DIR:-$HOME/magicsim/GR00T-WholeBodyControl/external_dependencies/XRoboToolkit-PC-Service-Pybind_X86_and_ARM64}"
+# SDK 查找顺序:环境变量 > 仓库自带 external/(发布仓库有)> 原始检出位置
+if [ -z "${SDK_DIR:-}" ]; then
+    if [ -d "$PWD/external/XRoboToolkit-PC-Service-Pybind_X86_and_ARM64" ]; then
+        SDK_DIR="$PWD/external/XRoboToolkit-PC-Service-Pybind_X86_and_ARM64"
+    else
+        SDK_DIR="$HOME/magicsim/GR00T-WholeBodyControl/external_dependencies/XRoboToolkit-PC-Service-Pybind_X86_and_ARM64"
+    fi
+fi
 
 if [ ! -d .venv-pico ]; then
     uv venv .venv-pico --python 3.10
 fi
-uv pip install --python .venv-pico/bin/python numpy pyzmq msgpack
+# pytest 与 scipy 是 tests/test_pico_math.py 要用的(check_all 用这个环境跑它)
+uv pip install --python .venv-pico/bin/python numpy pyzmq msgpack pytest scipy
 
 # Prefer a proper editable install (builds via CMake, same as GR00T's
 # install_pico.sh); fall back to dropping the prebuilt cp310 .so in place.

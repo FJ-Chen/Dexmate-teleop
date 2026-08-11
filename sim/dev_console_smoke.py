@@ -10,9 +10,24 @@
   4. 停完 CUDA 还能用 —— 用信号杀长跑的 Isaac 会搞坏 nvidia_uvm,这个仓库
      踩过 6 次,所以每次验停止都要顺带验这一条。
 """
+import subprocess
 import sys
 import time
 import pathlib
+
+# ⛔ 安全:本冒烟会在生产端口(:5581/:5583/:5584)上发布模拟数据。已连接
+# 真机的进程订阅着这些端口,会把模拟数据当真指令执行(2026-08-10 桥接台架
+# 在同样的机制下驱动了真机,用户按了急停)。真机进程在,就拒绝运行。
+_live = subprocess.run(["pgrep", "-af", "dexmate_bridge|sharpa_real_runner"],
+                       capture_output=True, text=True).stdout
+_live = [ln for ln in _live.splitlines()
+         if ("--live" in ln and "dexmate_bridge" in ln)
+         or "sharpa_real_runner" in ln]
+if _live:
+    print("[冒烟] ⛔ 检测到已连接真机的进程,拒绝运行:")
+    for ln in _live:
+        print("    " + ln)
+    sys.exit(2)
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
@@ -34,10 +49,11 @@ c.c_fake.value = True
 c.c_left.value = c.c_right.value = True
 c.c_head.value = True
 c.c_waist.value = False
-c.c_hand.value = True
+c.c_hand_l.value = c.c_hand_r.value = True
 c._apply_rules()
 print(f"[冒烟] 勾选 左{c.c_left.value:d} 右{c.c_right.value:d} 头{c.c_head.value:d} "
-      f"腰{c.c_waist.value:d} 手{c.c_hand.value:d} 模拟{c.c_fake.value:d}")
+      f"腰{c.c_waist.value:d} 左手{c.c_hand_l.value:d} 右手{c.c_hand_r.value:d} "
+      f"模拟{c.c_fake.value:d}")
 
 c.start_stack()
 print(f"[冒烟] start_stack 返回,进程表 {sorted(c.procs)}")

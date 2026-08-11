@@ -21,7 +21,9 @@ uv pip install -p "$P" --no-build-isolation --index-strategy unsafe-best-match \
 
 NP=$("$P" -c "import numpy; print(numpy.__version__)")
 C=$(mktemp); echo "numpy==$NP" > "$C"
-uv pip install -p "$P" -c "$C" nlopt pin pytransform3d anytree pyyaml lxml pyzmq wuji-sdk
+# pin-pink 与 msgpack 是手臂线消费端(sim/teleop_vega_pico.py)在这个环境里
+# 要 import 的,此前靠手动补装,脚本里一直缺。
+uv pip install -p "$P" -c "$C" nlopt pin pin-pink quadprog pytransform3d anytree pyyaml lxml pyzmq msgpack wuji-sdk
 uv pip install -p "$P" --no-deps -e "$PWD/third_party/dex-retargeting"
 
 # importing isaaclab bootstraps Kit, which prompts for the Omniverse EULA;

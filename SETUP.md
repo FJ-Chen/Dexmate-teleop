@@ -23,12 +23,10 @@
 sudo apt install avahi-utils                 # 设备面板的 mDNS 探测
 sudo apt install ./external/XRoboToolkit_PC_Service_1.0.0_ubuntu_22.04_amd64.deb   # 头显连接服务
 
-# 2. 三个 Python 环境(用 uv;pip 亦可)
-uv venv --python 3.11 .venv                  # 分析 / 手套 / 控制台
-.venv/bin/pip install -e . 
-uv venv --python 3.10 .venv-pico             # PICO producer(SDK 只有 cp310)
-.venv-pico/bin/pip install -e external/XRoboToolkit-PC-Service-Pybind_X86_and_ARM64 pyzmq msgpack numpy
-# .venv-isaac:按 Isaac Lab 官方文档安装(独立环境),再 pip install -e . 本仓库
+# 2. 三个 Python 环境,用仓库自带的脚本装(需要 uv:https://docs.astral.sh/uv/)
+bash scripts/setup_env.sh          # .venv:控制台/页面/手套/离线分析,装完自动跑自检
+bash scripts/setup_pico_env.sh     # .venv-pico:PICO 数据读取(SDK 用仓库 external/ 内的源码)
+bash scripts/setup_isaac_env.sh    # .venv-isaac:Isaac 仿真,首次下载 GB 级(pypi.nvidia.com)
 
 # 3. 环境变量(写进 ~/.bashrc)
 export MAGICSIM_ASSETS=<本仓库绝对路径>/assets/isaac    # USD 从仓库内取
@@ -43,6 +41,11 @@ sudo bash scripts/setup_robot_net.sh
 .venv/bin/python scripts/check_all.py        # 15 项免硬件自检,应全过
 .venv/bin/python scripts/vega_console.py     # 操作入口,浏览器 :8086
 ```
+
+预期结果说明:`check_all.py` 应 15/15(`setup_env.sh` 结尾自动跑的 `check_env.py`
+目前为 9/10 —— 失败的「sequential tracking」一项在开发机上也是同样数字,原因是
+手部重定向后来加入了平滑滤波(`low_pass_alpha 0.8`,真机验收过的配置),该项的
+阈值没有随之更新,不代表安装有问题)。
 
 之后按 [SOP_wholebody_teleop.md](SOP_wholebody_teleop.md)(全身)与 [SOP.md](SOP.md)(手部)操作。
 头显侧设置见 [docs/PICO_teleop.md](docs/PICO_teleop.md);项目全貌与未解决问题见

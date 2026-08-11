@@ -21,7 +21,7 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_SRC = Path("~/luhr/magicsim/Sharpa/sharpa-urdf-usd-xml/wave_01").expanduser()
+DEFAULT_SRC = Path("~/magicsim/Sharpa/sharpa-urdf-usd-xml/wave_01").expanduser()
 DST = REPO_ROOT / "assets" / "robots" / "hands" / "sharpa_wave"
 
 
@@ -58,6 +58,16 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--src", type=Path, default=DEFAULT_SRC, help="wave_01 directory")
     args = parser.parse_args()
+
+    # 生成好的资产随仓库分发。源目录只在最初制作资产的机器上存在;克隆下来
+    # 的仓库没有它,但也不需要它 —— 资产已在。只有源在场时才重新生成。
+    have = all((DST / s / f"{s}_sharpa_wave.urdf").exists() for s in ("right", "left"))
+    if not args.src.exists():
+        if have:
+            print(f"[prepare_assets] 资产已在 {DST.relative_to(REPO_ROOT)},"
+                  "源目录不在本机,跳过重新生成")
+            return
+        sys.exit(f"ERROR: 资产缺失且找不到源目录 {args.src}")
 
     for side in ("right", "left"):
         prepare_side(args.src, side)

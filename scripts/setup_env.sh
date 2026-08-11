@@ -9,6 +9,12 @@ P=.venv/bin/python
 uv pip install -p $P torch --index-url https://download.pytorch.org/whl/cpu
 # dex-retargeting is vendored in-repo under third_party/ (no sibling checkout needed)
 uv pip install -p $P -e third_party/dex-retargeting pyzmq pytest wuji-sdk
+# 手臂线(PICO -> Pink IK -> 页面)的依赖。此前这里只装手部线,手臂线的包是
+# 后来在机器上手动补的,新机器照脚本装会缺:viser(页面)、pin/pin-pink
+# (逆运动学)、yourdfpy(URDF 显示)、msgpack(消息)、scipy(数学工具)。
+# quadprog 是 pink 逆运动学的 QP 求解器后端 —— pin-pink 只装框架不装后端,
+# 缺了它 solve_ik 直接抛 SolverNotFound(干净环境实测抓到的)。
+uv pip install -p $P viser pin pin-pink yourdfpy msgpack scipy quadprog
 # Optional: SAPIEN preview window for teleop_retarget.py --viz (not the sim; that's Isaac):
 #   uv pip install -p $P "sapien==3.0.0b0"
 
