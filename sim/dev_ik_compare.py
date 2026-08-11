@@ -156,9 +156,13 @@ def material_overrange(model, data, q_home) -> list:
     return frames
 
 
-def material_playlist(model, data, pin_names, limit_frames=None) -> list:
-    """真实素材:回归 CSV 的 cmd 关节角 FK 成 6D 腕目标流。"""
-    with open(CSV_REAL) as fh:
+def material_from_joint_csv(model, data, pin_names, csv_path,
+                            limit_frames=None) -> list:
+    """把关节 CSV(回归台格式,cmd_<关节名> 列,50Hz)FK 成 6D 腕目标流。
+
+    可复用:换一份素材 = 换 csv_path 重跑(S3 就是这么用)。返回与合成
+    素材同构的帧列表 [{hand: (pos, quat_wxyz)}, ...]。"""
+    with open(csv_path) as fh:
         rows = list(csv.DictReader(fh))
     if limit_frames:
         rows = rows[:limit_frames]
@@ -282,8 +286,36 @@ def main() -> int:
     from curobo_vega_ik import CuroboVegaIK
     curobo = CuroboVegaIK(dt=1.0 / HZ)
     t_cur = time.time() - t0
-    print(f"构建耗时:pink {t_pink:.1f}s  curobo {t_cur:.1f}s(含预热)")
+    print(f"构建耗时:pink {t_pink:.1f}s  curobo {t_cur:.1f}s(含预热首解;"
+          "冷 warp 缓存首次约 17s)")
     backends = {"pink": pink, "curobo": curobo}
+
+    # ---- 稳态耗时基准 ---------------------------------------------------
+    # 预热首解已吃在构建里,这里量的是 50Hz 控制环真正面对的稳态单步耗时
+    # (cuRobo 侧含 ZMQ 往返,即部署路径)。这是 S6 架构选型的硬门槛数:
+    # 环给 IK 的预算约 5ms。数字如实打,不达标不藏。
+    print("\n== 稳态单步耗时(目标=HOME 位姿保持,300 步) ==")
+    for n, ik in backends.items():
+        ik.reset_home()
+        home_tgt = {h: fk_pose(model, data, q_home, EE_FRAME[h])
+                    for h in EE_FRAME}
+        ts = []
+        for _ in range(300):
+            for h, (p, R) in home_tgt.items():
+                ik.set_target(h, p, quat_wxyz(R))
+            t0 = time.perf_counter()
+            ik.solve()
+            ts.append(time.perf_counter() - t0)
+        ts = np.array(ts) * 1000
+        p50, p95 = np.percentile(ts, 50), np.percentile(ts, 95)
+        # 自检:稳态 p95 必须进 50Hz 的控制周期(20ms),否则这个后端在
+        # 该机器上根本追不上环,后面的精度对比失去意义。
+        ok = p95 < 20.0
+        print(f"  {n:8s} p50 {p50:6.2f}ms  p95 {p95:6.2f}ms  "
+              f"p99 {np.percentile(ts, 99):6.2f}ms  max {ts.max():6.2f}ms"
+              f"  {'✅ < 20ms 周期' if ok else '❌ 追不上 50Hz 环'}"
+              + ("" if p50 < 5.0 else "  ⚠ 超 5ms 预算"))
+        bad += 0 if ok else 1
 
     # ---- 素材 1:可达合成轨迹 -------------------------------------------
     frames = material_synthetic(model, data, q_home)
@@ -321,8 +353,8 @@ def main() -> int:
 
     # ---- 素材 3:真实素材 -----------------------------------------------
     if not args.skip_real:
-        frames = material_playlist(model, data, pin_names,
-                                   args.frames or None)
+        frames = material_from_joint_csv(model, data, pin_names, CSV_REAL,
+                                         args.frames or None)
         res3 = {n: run_backend(ik, frames, model, data)
                 for n, ik in backends.items()}
         print_table(f"素材 3:真实素材 playlist_all13({len(frames)} 帧,"

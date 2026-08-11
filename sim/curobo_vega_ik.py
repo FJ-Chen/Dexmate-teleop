@@ -46,10 +46,23 @@ playlist_all13 全 6889 帧):贴限位帧 5.85%→0.01%、>5° 跳变 7.90%→0.
 肘部低权任务与操作者回转角(swivel)不支持:对应方法见下,前者按 Pink
 默认(elbow_cost=0)同样是无操作,后者收到非 None 目标即抛错。
 
-构建耗时(RTX 3070 Ti Laptop):warp 内核缓存热时约 3 秒,首次(冷缓存)
-约 17 秒;子进程启动等待上限 120 秒。本类仍须在 AppLauncher 之前构建
-(pinocchio 账本怕 isaacsim 覆写 eigenpy;子进程也要赶在 Kit 抢占 GPU
-之前把 CUDA 图捕获做完)。
+耗时(RTX 3070 Ti Laptop,预热后稳态与预热分开报;50Hz 环给 IK 的预算
+约 5ms,这组数是进程内/异步架构选型的硬门槛):
+
+    构建+预热首解:warp 缓存热约 3s,冷缓存首次约 17s(等待上限 120s)
+    稳态单步(iters=局部 L-BFGS 次数,须为 20 的倍数;默认 100):
+      iters=200  核心 p50 11.3ms          —— 上游默认,无收益
+      iters=100  核心 p50  7.3ms / p95 8.4ms,经 IPC p50 8.4ms(默认)
+      iters= 40  核心 p50  5.2ms,经 IPC p50 5.9ms —— 质量近乎不减
+                 (playlist 位置均 4.0→4.9mm、贴限位 0.01→0.09%),预算
+                 吃紧时的候选
+      iters= 20  核心 p50  4.5ms,但超量程后**恢复失败**(卡 95.7°),
+                 不可用 —— 迭代数的硬下限在 20 与 40 之间
+    ZMQ 往返占 0.7-1.1ms;2026-08-10 曾把本类临时接进 teleop 冒烟:
+    同步 IPC + iters=100 下 50Hz 回放实时倍率 1.05x,没有掉帧。
+
+本类仍须在 AppLauncher 之前构建(pinocchio 账本怕 isaacsim 覆写 eigenpy;
+子进程也要赶在 Kit 抢占 GPU 之前把 CUDA 图捕获做完)。
 
 服务端入口(通常不用手动起,客户端自己拉):
     .venv-isaac/bin/python sim/curobo_vega_ik.py --serve --ready-file /tmp/x
