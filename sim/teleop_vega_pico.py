@@ -200,12 +200,28 @@ parser.add_argument("--tracker-waist", default="WAIST",
                     help="[--mode trackers] waist tracker serial = the body "
                          "root the wrist targets are relative to, and the "
                          "torso-lean source")
-parser.add_argument("--ik", choices=["pink", "dls"], default="pink",
+parser.add_argument("--ik", choices=["pink", "dls", "curobo"], default="pink",
                     help="pink = Pink QP IK with a null-space posture task + "
                          "hard joint limits (prevents the redundant-DOF winding "
                          "DLS suffers; the reference G1 solver, required now "
                          "that there's no grip clutch to un-wind with). dls = "
-                         "the old DifferentialIKController, kept for comparison")
+                         "the old DifferentialIKController, kept for comparison. "
+                         "curobo = cuRobo 速度受限局部 IK,GPU 求解子进程"
+                         "(端口 17830-17849,见 curobo_vega_ik.py):逐帧跳变"
+                         "被 URDF 速度限位结构性钳制,离线台架 >5° 跳变 "
+                         "7.90%%→0.03%%、贴限位 5.85%%→0.01%%,代价腕位置误差"
+                         "均值 +4mm(速度钳制的跟随滞后)。不支持选支与回转角"
+                         "(--branch-at-engage / --null-bias>0 会在用到的那一刻"
+                         "抛 NotImplementedError),没有限位放松(--relax-* 统计"
+                         "恒为零,summary 如实打 NEVER FIRED)")
+parser.add_argument("--curobo-iters", type=int, default=40,
+                    help="[--ik curobo] 每帧局部 L-BFGS 迭代数,须为 20 的倍数。"
+                         "离线台架实测(RTX 3070 Ti,50Hz 素材,经 IPC 单步):"
+                         "100 → p50 8.3ms,质量最优;40(默认)→ 5.9ms,几乎"
+                         "不减质(playlist 位置均值 4.0→4.9mm、贴限位 "
+                         "0.01→0.09%%);20 → 4.5ms 但超量程后恢复失败"
+                         "(卡 95.7° 不收敛),不可用 —— 硬下限在 20 与 40 "
+                         "之间")
 parser.add_argument("--hands", choices=["both", "right", "left"], default="both")
 parser.add_argument("--control_hz", type=float, default=60.0)
 parser.add_argument("--physics-hz", type=float, default=240.0,
@@ -645,6 +661,34 @@ if args_cli.ik == "pink":
     except Exception as e:  # pink/pinocchio missing or URDF unreadable
         joint_guard = None      # a half-built guard must not survive the fallback
         print(f"[pink] build failed ({e!r}); falling back to --ik dls")
+        args_cli.ik = "dls"
+elif args_cli.ik == "curobo":
+    # cuRobo 后端与 Pink 鸭子类型兼容(接口契约 = 本文件 pink_ik. 的全部
+    # 用点),沿用同一个变量名。同样必须在 AppLauncher 之前构建:pinocchio
+    # 账本怕 isaacsim 覆写 eigenpy;求解子进程也要赶在 Kit 抢占 GPU 之前把
+    # CUDA 图捕获做完(见 curobo_vega_ik.py 的 docstring)。
+    try:
+        from curobo_vega_ik import CuroboVegaIK  # noqa: E402
+
+        if args_cli.joint_vel_scale > 0.0 or args_cli.self_collision != "off":
+            from magicdexmate.joint_guard import JointGuard
+            joint_guard = JointGuard(
+                control_hz=args_cli.control_hz,
+                vel_scale=args_cli.joint_vel_scale,
+                margin_m=args_cli.collision_margin,
+                collision=(args_cli.self_collision != "off"))
+            print(f"[guard] built before Kit load: vel_scale="
+                  f"{args_cli.joint_vel_scale} collision={args_cli.self_collision}"
+                  f" pairs={len(joint_guard.pairs)}")
+            from magicdexmate.home_pose import ARM_HOME as _HOME
+            joint_guard.env_self_check(_HOME)
+        pink_ik = CuroboVegaIK(dt=1.0 / args_cli.control_hz,
+                               local_iters=args_cli.curobo_iters)
+        print(f"[curobo] IK built ({len(pink_ik.pin_names)} arm joints, "
+              f"iters={args_cli.curobo_iters}) before Kit load")
+    except Exception as e:  # curobo/GPU 不可用或求解子进程没起来
+        joint_guard = None      # a half-built guard must not survive the fallback
+        print(f"[curobo] build failed ({e!r}); falling back to --ik dls")
         args_cli.ik = "dls"
 
 app_launcher = AppLauncher(args_cli)
