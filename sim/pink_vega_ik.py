@@ -158,6 +158,17 @@ class PinkVegaIK:
         # 足以滤掉单帧抖动,又不至于让手臂真的贴上限位时反应不过来。
         self._slack_ema: dict = {}
         self._slack_alpha = 0.25
+        # 放松强度 u 的**不对称迟滞**(2026-08-11 凌晨,腕抖 A/B 定位后加):
+        # 在放松地板的平衡点附近,u 随 slack 逐帧波动,权重与目标插值跟着
+        # 抖,整条手臂的解都会起涟漪 —— 实测开 relax 时腕部微振荡(0.1-5°
+        # 的方向反转)3.2-7.0 次每秒,关掉只有 0.5-0.7,差 5-12 倍,这正是
+        # 操作者肉眼看到的手腕抖。修法:u 增大(要放松,安全方向)跟得快,
+        # u 减小(恢复朝向)只能慢——50Hz 下 0.06 ≈ 0.3 秒时间常数,平衡点
+        # 附近的扑动被吸掉,真正离开限位区后约半秒内权重平滑复原。
+        self._u_state: dict = {}
+        self._u_pos_state: dict = {}
+        self._u_attack = 1.0
+        self._u_release = 0.06
         # Small span, many iterations. The null direction is a LINEARISATION;
         # scanning +-1.2 rad of it leaves the manifold (measured: the EE drifts
         # 58 mm / 14.6 deg when the line search is run without the wrist task
@@ -326,6 +337,8 @@ class PinkVegaIK:
         """
         self._slack_ema.clear()
         self._slack_ema_pos.clear()
+        self._u_state.clear()
+        self._u_pos_state.clear()
         d = float(np.degrees(np.abs(self.config.q - self.q_home)).max())
         self.config.q = self.q_home.copy()
         self.config.update()
@@ -515,13 +528,37 @@ class PinkVegaIK:
             slack = (slack if prev is None
                      else prev + self._slack_alpha * (slack - prev))
             self._slack_ema[hand] = slack
-            u = float(np.clip(1.0 - (slack - self._relax_floor)
-                              / max(self._relax_margin, 1e-9), 0.0, 1.0))
-            # **连续过渡,不是硬开关**。第一版是二值的:进了 margin 权重直接
-            # 从 0.5 掉到 0.005,出去又跳回来 —— 代价函数每跳一次解就抖一下,
-            # 实测 >5° 跳变从 3.56% 涨到 4.27%,而且肉眼看得出来。
-            # smoothstep 让权重在边界上一阶连续,抖动的来源就没有了。
-            u = u * u * (3.0 - 2.0 * u)
+            # 放松强度 u 的状态机(2026-08-11 凌晨第三版,前两版的失败都量过):
+            #   连续调制版 —— 在地板平衡点附近 u 逐帧扑动,腕部微振荡 3.2-7.0
+            #   次每秒(关掉只有 0.5-0.7),就是操作者看到的手腕抖;
+            #   进快出慢的迟滞版 —— 释放看的是 slack,可需求仍不可达时权重一
+            #   恢复就被推回墙,形成慢速极限环,最近距墙 0.2°,更糟。
+            # 正确语义:**保持/释放看「需求还在量程外吗」,不看离墙多远。**
+            #   进入:腕已贴地板,或已进过渡带且需求明显达不到;
+            #   保持:只要需求与当前朝向仍差得远(还不可达)就保持全额放松,
+            #        腕由 posture 安静地停在地板附近,什么都不扑动;
+            #   释放:操作者把手转回来(需求差角变小)才放,且平滑放完。
+            e_raw = None
+            t = self.frame_tasks[hand]
+            if t.transform_target_to_world is not None:
+                if fk_stale:
+                    pin.framesForwardKinematics(self.model, self.data,
+                                                self.config.q)
+                    pin.updateFramePlacements(self.model, self.data)
+                    fk_stale = False
+                _R_cur = self.data.oMf[
+                    self.model.getFrameId(EE_FRAME[hand])].rotation
+                e_raw = float(np.degrees(np.linalg.norm(pin.log3(
+                    t.transform_target_to_world.rotation.T @ _R_cur))))
+            _pu = self._u_state.get(hand, 0.0)
+            engage = (slack < self._relax_floor
+                      or (slack < self._relax_floor + self._relax_margin
+                          and e_raw is not None and e_raw > 15.0))
+            hold = _pu > 0.05 and e_raw is not None and e_raw > 10.0
+            u_tgt = 1.0 if (engage or hold) else 0.0
+            _a = self._u_attack if u_tgt > _pu else self._u_release
+            u = _pu + _a * (u_tgt - _pu)
+            self._u_state[hand] = u
             if self._relax_scale >= 1.0:
                 u = 0.0     # 朝向放松整体关闭(--relax-at-limit 1.0)
             want = self._ori_cost0 * (1.0 - u * (1.0 - self._relax_scale))
@@ -542,9 +579,32 @@ class PinkVegaIK:
                 s2 = (s2 if prev2 is None
                       else prev2 + self._slack_alpha * (s2 - prev2))
                 self._slack_ema_pos[hand] = s2
-                u_pos = float(np.clip(1.0 - (s2 - self._relax_floor * 0.5)
-                                      / max(self._relax_margin, 1e-9), 0.0, 1.0))
-                u_pos = u_pos * u_pos * (3.0 - 2.0 * u_pos)
+                # 与朝向侧同款状态机:保持/释放看「位置需求还够不够得着」
+                # (需求点与当前末端的距离),不看离限位多远 —— 连续调制会
+                # 扑动,按 slack 释放会形成「权重回来→被推回墙」的慢速循环,
+                # 两版都实测淘汰过(机理见朝向侧注释)。
+                e_pos = None
+                if t.transform_target_to_world is not None:
+                    if fk_stale:
+                        pin.framesForwardKinematics(self.model, self.data,
+                                                    self.config.q)
+                        pin.updateFramePlacements(self.model, self.data)
+                        fk_stale = False
+                    e_pos = float(np.linalg.norm(
+                        t.transform_target_to_world.translation
+                        - self.data.oMf[
+                            self.model.getFrameId(EE_FRAME[hand])].translation
+                    ) * 1000.0)
+                _pp = self._u_pos_state.get(hand, 0.0)
+                _floor2 = self._relax_floor * 0.5
+                engage2 = (s2 < _floor2
+                           or (s2 < _floor2 + self._relax_margin
+                               and e_pos is not None and e_pos > 50.0))
+                hold2 = _pp > 0.05 and e_pos is not None and e_pos > 30.0
+                u_tgt2 = 1.0 if (engage2 or hold2) else 0.0
+                _a = self._u_attack if u_tgt2 > _pp else self._u_release
+                u_pos = _pp + _a * (u_tgt2 - _pp)
+                self._u_pos_state[hand] = u_pos
                 # 权重也要一起降(对称于朝向那版的教训,方向相反):只插值
                 # 不降权时,目标=当前 + 权重 8 是一个强阻尼器 —— 罚的是每步
                 # 位移 —— 把手臂**冻在**墙上(实测 slack 0.5°),posture
