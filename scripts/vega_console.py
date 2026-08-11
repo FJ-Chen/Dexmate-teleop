@@ -436,12 +436,51 @@ class Console:
         return None
 
     # -- the stack ------------------------------------------------------------
+    def _reap_strays(self):
+        """清理不归本控制台管的游离仿真/采集进程。
+
+        2026-08-10 实测的事故形态:控制台 Ctrl-C 的收尾要等仿真进程正常退出
+        (约 25 秒),中断它或直接关终端,消费端就成了孤儿继续满载烧 CPU;
+        新起的消费端发现状态端口被占**并不报死**,于是多个消费端并存,整机
+        被拖到 0.78 倍实时(当晚同时活着 3 个)。「启动」前先清理:凡是
+        teleop_vega_pico / teleop_pico_producer 进程而不在本控制台的进程表里
+        的,一律 SIGINT 并等待,清不掉就 SIGTERM。"""
+        mine = {p.p.pid for p in self.procs.values() if p.alive()}
+        out = subprocess.run(
+            ["pgrep", "-f", "teleop_vega_pico|teleop_pico_producer"],
+            capture_output=True, text=True).stdout
+        strays = [int(x) for x in out.split() if x.isdigit()
+                  and int(x) not in mine and int(x) != os.getpid()]
+        if not strays:
+            return
+        print(f"[console] 发现 {len(strays)} 个游离的仿真/采集进程(上次未收干净),"
+              f"先行清理:{strays}")
+        for pid in strays:
+            try:
+                os.kill(pid, signal.SIGINT)
+            except ProcessLookupError:
+                pass
+        t0 = time.time()
+        while time.time() - t0 < 20.0:
+            alive = [p for p in strays
+                     if subprocess.run(["kill", "-0", str(p)],
+                                       capture_output=True).returncode == 0]
+            if not alive:
+                break
+            time.sleep(0.5)
+        for pid in strays:
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+
     def start_stack(self):
         fake = self.c_fake.value
         arms = self.c_left.value or self.c_right.value
         if not arms and self._hand_sides() is None:
             self.g_stack.value = "没有勾选任何部位"
             return
+        self._reap_strays()
 
         if arms:
             if PC_SERVICE.exists() and not fake and \
