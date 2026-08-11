@@ -34,6 +34,11 @@ CHECKS = [
                     "tests/test_pico_math.py", "-q"], 15, False),
     ("拍手对齐尺子自检", [PY, "scripts/check_clap_sync.py", "--self-check"], 3, False),
     ("限位放松自锁回归", [PY, "sim/dev_relax_latch.py"], 8, False),
+    # 须用 .venv-isaac(cuRobo 只装在那里;客户端拿 sys.executable 起求解
+    # 子进程)。需要 GPU:没有时模块整体 skip 而非假绿。热 warp 缓存实测
+    # 7 秒,冷缓存(重启后首次)约 40 秒到 2 分钟。
+    ("cuRobo IK 接口单测", [PY_ISAAC, "-m", "pytest",
+                        "tests/test_curobo_ik.py", "-q"], 30, False),
     ("真机姿态回显", [PY, "sim/dev_robot_echo.py"], 10, False),
     ("点云自检(合成)", [PY, "scripts/kinect_pointcloud.py", "--self-check"], 20, False),
     ("对比台自检", [PY, "sim/viser_verify_selfcheck.py"], 40, False),

@@ -1,12 +1,12 @@
 """cuRobo 后端:Vega-1 双臂 14 关节逆运动学,与 PinkVegaIK 鸭子类型兼容。
 
-这是 README「后续计划」第 1 条的求解器部分。本文件只提供后端类与对比台
-入口,**尚未接进 teleop 主程序**(接入将另行进行:argparse 加 curobo 选项
-+ 构造处一个 elif;2026-08-10 已用同样的接法冒烟验证过一次后按分步计划
-撤回,主进程与子进程结构在 Isaac 旁边工作正常)。接口契约以
-`sim/teleop_vega_pico.py` 里 `pink_ik.` 的全部实际用点为准;没有用到、也
-没有对应机制的成员(冗余回转角控制、限位放松)不做假实现 —— 要么如实
-返回零统计,要么直接抛 NotImplementedError,绝不出现「接好了从没执行」。
+这是 README「后续计划」第 1 条的求解器部分。已接进 teleop 主程序
+(2026-08-11,`--ik curobo`,teleop 侧传 `--curobo-iters` 默认 40;默认
+`--ik pink` 行为逐位不变)。接口契约以 `sim/teleop_vega_pico.py` 里
+`pink_ik.` 的全部实际用点为准,单测在 tests/test_curobo_ik.py(挂在
+scripts/check_all.py);没有用到、也没有对应机制的成员(冗余回转角控制、
+限位放松)不做假实现 —— 要么如实返回零统计,要么直接抛
+NotImplementedError,绝不出现「接好了从没执行」。
 
 为什么是独立进程 + ZMQ(2026-08-10 实测,三条路都走过):
 
@@ -103,6 +103,17 @@ SERVER_BUILD_TIMEOUT_S = 120.0      # 冷 warp 缓存实测 17s,给足余量
 SOLVE_TIMEOUT_MS = 2000             # 单步 p95 约 8ms;超时即认定服务端死亡
 
 
+def _check_iters(local_iters: int):
+    """iters 必须是 20 的正倍数(上游 L-BFGS 以 20 次为一个外层块;非倍数
+    值没有对应的实测数据点,配错了宁可当场报错也不要安静地跑一个没人测过
+    的配置)。客户端在起子进程之前查,服务端在构造核心时再查一遍。"""
+    if local_iters < 20 or local_iters % 20 != 0:
+        raise ValueError(
+            f"local_iters={local_iters} 非法:须为 20 的正倍数(实测前沿:"
+            "100→IPC p50 8.3ms 质量最优,40→5.9ms 几乎不减质,20 超量程"
+            "恢复失败不可用)")
+
+
 # ============================================================ 服务端 ====
 class _CuroboArmCore:
     """子进程里的求解核心。只在服务端 import cuRobo/torch/warp。"""
@@ -110,6 +121,7 @@ class _CuroboArmCore:
     def __init__(self, urdf_path: str, home_arm: dict, dt: float,
                  position_weight: float, orientation_weight: float,
                  local_iters: int):
+        _check_iters(local_iters)
         import torch
         from curobo.motion_retargeter import (
             MotionRetargeter,
@@ -333,7 +345,8 @@ class CuroboVegaIK:
                  position_weight: float = 1.0, orientation_weight: float = 0.05,
                  local_iters: int = 100):
         # local_iters 默认 100:200 次(上游默认)与 100 次在全部三份素材
-        # 上指标一致,耗时 11.3ms → 7.5ms。
+        # 上指标一致,耗时 11.3ms → 7.5ms。teleop 侧(--curobo-iters)默认 40。
+        _check_iters(local_iters)
         if home_arm is None:
             home_arm = HOME_ARM
 
@@ -368,6 +381,11 @@ class CuroboVegaIK:
             M = self.data.oMf[self.model.getFrameId(frame)]
             self._tgt[hand] = pin.SE3(M.rotation.copy(), M.translation.copy())
         self.last_target = dict(self._tgt)
+
+        # 每次 solve 的经-IPC 墙钟毫秒数。在管线里跑时 Kit/渲染与求解子进程
+        # 争同一块 GPU,离线台架的 5.9ms(iters=40)不代表管线内真实耗时;
+        # close() 时打一行分位数,与台架数并排看就是 GPU 争用的量化。
+        self.solve_ms: list = []
 
         # ---- 求解子进程 ----
         self._proc = None
@@ -440,6 +458,16 @@ class CuroboVegaIK:
 
     def close(self):
         """结束求解子进程。atexit 注册过;重复调用无害。"""
+        if self.solve_ms and not getattr(self, "_stats_printed", False):
+            # 只在真解过至少一步时打(没解过就没有数,不打空行);打过一次
+            # 就不再打 —— close 会被 atexit 重复调用。
+            self._stats_printed = True
+            a = np.asarray(self.solve_ms)
+            print(f"[curobo] solve wall-time over IPC: n={len(a)} "
+                  f"p50 {np.percentile(a, 50):.2f}ms "
+                  f"p95 {np.percentile(a, 95):.2f}ms "
+                  f"p99 {np.percentile(a, 99):.2f}ms max {a.max():.2f}ms "
+                  f"(离线台架 iters=40 p50 5.9ms,差值即 GPU 争用)")
         if self._sock is not None:
             try:
                 self._sock.send_string(json.dumps({"op": "quit"}))
@@ -505,7 +533,9 @@ class CuroboVegaIK:
             req[hand] = [float(M.translation[0]), float(M.translation[1]),
                          float(M.translation[2]),
                          float(q.w), float(q.x), float(q.y), float(q.z)]
+        t0 = time.perf_counter()
         r = self._request(req)
+        self.solve_ms.append((time.perf_counter() - t0) * 1000.0)
         if not r.get("ok"):
             raise RuntimeError(f"cuRobo 求解失败:{r.get('err')}")
         self.config.q = np.asarray(r["q"], dtype=np.float64)
