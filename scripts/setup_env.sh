@@ -14,7 +14,7 @@ uv pip install -p $P -e third_party/dex-retargeting pyzmq pytest wuji-sdk
 # (逆运动学)、yourdfpy(URDF 显示)、msgpack(消息)、scipy(数学工具)。
 # quadprog 是 pink 逆运动学的 QP 求解器后端 —— pin-pink 只装框架不装后端,
 # 缺了它 solve_ik 直接抛 SolverNotFound(干净环境实测抓到的)。
-uv pip install -p $P viser pin pin-pink yourdfpy msgpack scipy quadprog
+uv pip install -p $P viser pin pin-pink yourdfpy msgpack scipy quadprog pyk4a
 # Optional: SAPIEN preview window for teleop_retarget.py --viz (not the sim; that's Isaac):
 #   uv pip install -p $P "sapien==3.0.0b0"
 
