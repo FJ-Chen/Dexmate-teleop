@@ -505,7 +505,15 @@ class Console:
             #    负载 7.23%/6.92%(旧码同负载 81.25%),腕关节从顶限位名单
             #    里消失,腕误差与无防护基线持平(17.7/12.8mm)。机理回归见
             #    sim/dev_relax_latch.py(在 check_all 里)。
-            guard = " --self-collision hold --relax-at-limit 0.01 --relax-margin 3.0"
+            # 腕部限位放松的默认史:08-09 开(空载数据)→ 当天撤(误判负载);
+            # 08-10 修好自锁后再开 → 08-11 用户实时实测「感觉不如之前」再撤。
+            # 嫌疑:实时快动作的朝向滞后常态性超过它的保持阈值,放松粘住不放,
+            # 掌心跟随发钝 —— 离线回放的指标看不出这种手感。教训第三次重复:
+            # 影响手感的默认值只能由穿戴实测拍板。要试新机制:VEGA_RELAX=on。
+            guard = " --self-collision hold"
+            if os.environ.get("VEGA_RELAX", "").strip() == "on":
+                guard += " --relax-at-limit 0.01 --relax-margin 3.0"
+                print("[console] 腕部限位放松:开(VEGA_RELAX=on)")
             # IK 后端切换:环境变量 VEGA_IK=curobo 时试用 curobo 后端(须代码里
             # 已有该选项),默认不设 = pink,行为与从前逐位相同。做成环境变量
             # 而不是页面控件:这是试验期开关,页面只留操作者日常要用的东西。
