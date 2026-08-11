@@ -37,3 +37,7 @@ scripts/trackers.env
 .venv
 .venv-isaac
 .venv-pico
+
+# curobo:TODO 换 IK 用的第三方克隆,不入库(要 vendor 时另行决定)
+curobo/
+curobo
