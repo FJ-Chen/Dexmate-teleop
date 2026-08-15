@@ -1,0 +1,13 @@
+pupil-apriltags
+loguru
+scipy
+opencv-contrib-python
+numpy
+pyyaml
+matplotlib
+viser
+yourdfpy
+pybullet
+av
+pyudev
+termcolor

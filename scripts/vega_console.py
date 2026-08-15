@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """操作台:打开这一个脚本,其余全部在浏览器里操作。
 
-    cd <仓库根目录> && .venv/bin/python scripts/vega_console.py
+    cd <仓库根目录> && .venv/bin/python scripts/vega_console.py 
 
 浏览器打开 http://localhost:8086。勾选要控制的部位,点「启动」,页面里
 就是机器人。连接真机、录制数据、停止,都是页面上的按钮。

@@ -31,7 +31,7 @@ bash scripts/setup_isaac_env.sh    # .venv-isaac:Isaac 仿真,首次下载 GB �
 # 3. 环境变量(写进 ~/.bashrc)
 export MAGICSIM_ASSETS=<本仓库绝对路径>/assets/isaac    # USD 从仓库内取
 
-# 4. 真机网络(每次网口拔插/重启后也要跑一次)
+# 4. 真机网络(固化进 NetworkManager,跑一次即可;之后可用 --check 只做自检)
 sudo bash scripts/setup_robot_net.sh
 ```
 
